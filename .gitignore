@@ -23,7 +23,7 @@ Homestead.yaml
 npm-debug.log
 yarn-error.log
 /auth.json
-/docs/private/*.local.md
+/docs/private/*
 /.fleet
 /.idea
 /.nova
