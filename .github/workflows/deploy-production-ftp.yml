@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       run_migrations:
-        description: Run production database migrations from GitHub Actions
+        description: Run production database migrations on the hosting after FTP upload
         required: true
         type: boolean
         default: false
@@ -31,12 +31,6 @@ jobs:
       FTP_APP_DIR: ${{ vars.FTP_APP_DIR }}
       FTP_PUBLIC_DIR: ${{ vars.FTP_PUBLIC_DIR }}
       PRODUCTION_APP_URL: ${{ vars.PRODUCTION_APP_URL }}
-      PRODUCTION_APP_KEY: ${{ secrets.PRODUCTION_APP_KEY }}
-      PRODUCTION_DB_HOST: ${{ secrets.PRODUCTION_DB_HOST }}
-      PRODUCTION_DB_PORT: ${{ secrets.PRODUCTION_DB_PORT }}
-      PRODUCTION_DB_DATABASE: ${{ secrets.PRODUCTION_DB_DATABASE }}
-      PRODUCTION_DB_USERNAME: ${{ secrets.PRODUCTION_DB_USERNAME }}
-      PRODUCTION_DB_PASSWORD: ${{ secrets.PRODUCTION_DB_PASSWORD }}
 
     steps:
       - name: Checkout
@@ -52,12 +46,6 @@ jobs:
 
           if [ "${{ inputs.run_migrations }}" = "true" ] || [ "${{ inputs.seed_database }}" = "true" ]; then
             test -n "$PRODUCTION_APP_URL" || (echo "Missing repository variable PRODUCTION_APP_URL" && exit 1)
-            test -n "$PRODUCTION_APP_KEY" || (echo "Missing secret PRODUCTION_APP_KEY" && exit 1)
-            test -n "$PRODUCTION_DB_HOST" || (echo "Missing secret PRODUCTION_DB_HOST" && exit 1)
-            test -n "$PRODUCTION_DB_PORT" || (echo "Missing secret PRODUCTION_DB_PORT" && exit 1)
-            test -n "$PRODUCTION_DB_DATABASE" || (echo "Missing secret PRODUCTION_DB_DATABASE" && exit 1)
-            test -n "$PRODUCTION_DB_USERNAME" || (echo "Missing secret PRODUCTION_DB_USERNAME" && exit 1)
-            test -n "$PRODUCTION_DB_PASSWORD" || (echo "Missing secret PRODUCTION_DB_PASSWORD" && exit 1)
           fi
 
       - name: Setup PHP
@@ -88,57 +76,6 @@ jobs:
           php artisan route:clear
           php artisan view:clear
           php artisan event:clear
-
-      - name: Create production environment file for database tasks
-        if: ${{ inputs.run_migrations || inputs.seed_database }}
-        shell: bash
-        run: |
-          cat > .env <<EOF
-          APP_NAME="DS Art"
-          APP_ENV=production
-          APP_KEY=$PRODUCTION_APP_KEY
-          APP_DEBUG=false
-          APP_URL=$PRODUCTION_APP_URL
-
-          APP_LOCALE=ru
-          APP_FALLBACK_LOCALE=ru
-          APP_FAKER_LOCALE=ru_RU
-
-          LOG_CHANNEL=stack
-          LOG_STACK=single
-          LOG_LEVEL=error
-
-          DB_CONNECTION=mysql
-          DB_HOST=$PRODUCTION_DB_HOST
-          DB_PORT=$PRODUCTION_DB_PORT
-          DB_DATABASE=$PRODUCTION_DB_DATABASE
-          DB_USERNAME=$PRODUCTION_DB_USERNAME
-          DB_PASSWORD=$PRODUCTION_DB_PASSWORD
-
-          SESSION_DRIVER=file
-          SESSION_LIFETIME=120
-          SESSION_ENCRYPT=false
-          SESSION_PATH=/
-          SESSION_DOMAIN=null
-
-          CACHE_STORE=file
-          QUEUE_CONNECTION=sync
-          FILESYSTEM_DISK=public
-
-          MAIL_MAILER=log
-          MAIL_FROM_ADDRESS="no-reply@example.com"
-          MAIL_FROM_NAME="\${APP_NAME}"
-
-          VITE_APP_NAME="\${APP_NAME}"
-          EOF
-
-      - name: Run production database migrations
-        if: ${{ inputs.run_migrations }}
-        run: php artisan migrate --force --no-interaction
-
-      - name: Seed production database once
-        if: ${{ inputs.seed_database }}
-        run: php artisan db:seed --force --no-interaction
 
       - name: Prepare deploy package
         shell: bash
@@ -188,6 +125,80 @@ jobs:
           $app->handleRequest(Request::capture());
           PHP
 
+          if [ "${{ inputs.run_migrations }}" = "true" ] || [ "${{ inputs.seed_database }}" = "true" ]; then
+            DEPLOY_RUNNER_TOKEN="$(openssl rand -hex 32)"
+
+            cat > "$PUBLIC_DEPLOY_DIR/__ds_art_deploy_runner.php" <<PHP
+          <?php
+
+          declare(strict_types=1);
+
+          use Illuminate\Contracts\Console\Kernel;
+
+          @set_time_limit(300);
+
+          header('Content-Type: application/json; charset=utf-8');
+
+          \$expectedToken = '$DEPLOY_RUNNER_TOKEN';
+          \$providedToken = (string) (\$_GET['token'] ?? '');
+
+          if (! hash_equals(\$expectedToken, \$providedToken)) {
+              http_response_code(404);
+              echo json_encode(['ok' => false, 'message' => 'Not found']);
+              exit;
+          }
+
+          \$appPath = realpath(__DIR__.'/../ds-art-app');
+
+          if (\$appPath === false || ! is_file(\$appPath.'/artisan')) {
+              http_response_code(500);
+              echo json_encode(['ok' => false, 'message' => 'Laravel app path is not available']);
+              exit;
+          }
+
+          chdir(\$appPath);
+
+          require \$appPath.'/vendor/autoload.php';
+
+          \$app = require_once \$appPath.'/bootstrap/app.php';
+
+          /** @var Kernel \$kernel */
+          \$kernel = \$app->make(Kernel::class);
+          \$commands = [];
+
+          if (filter_var(\$_GET['migrate'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+              \$commands[] = ['name' => 'migrate', 'arguments' => ['--force' => true, '--no-interaction' => true]];
+          }
+
+          if (filter_var(\$_GET['seed'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+              \$commands[] = ['name' => 'db:seed', 'arguments' => ['--force' => true, '--no-interaction' => true]];
+          }
+
+          \$results = [];
+
+          foreach (\$commands as \$command) {
+              \$exitCode = \$kernel->call(\$command['name'], \$command['arguments']);
+              \$output = trim(\$kernel->output());
+
+              \$results[] = [
+                  'command' => \$command['name'],
+                  'exit_code' => \$exitCode,
+                  'output' => \$output,
+              ];
+
+              if (\$exitCode !== 0) {
+                  http_response_code(500);
+                  echo json_encode(['ok' => false, 'results' => \$results], JSON_UNESCAPED_UNICODE);
+                  exit;
+              }
+          }
+
+          echo json_encode(['ok' => true, 'results' => \$results], JSON_UNESCAPED_UNICODE);
+          PHP
+
+            echo "DEPLOY_RUNNER_TOKEN=$DEPLOY_RUNNER_TOKEN" >> "$GITHUB_ENV"
+          fi
+
           echo "APP_DEPLOY_DIR=$APP_DEPLOY_DIR" >> "$GITHUB_ENV"
           echo "PUBLIC_DEPLOY_DIR=$PUBLIC_DEPLOY_DIR" >> "$GITHUB_ENV"
 
@@ -219,5 +230,40 @@ jobs:
             --exclude-glob .well-known \
             --exclude-glob .well-known/* \
             "$PUBLIC_DEPLOY_DIR" "$PUBLIC_DIR"
+          bye
+          EOF
+
+      - name: Run server-side production database tasks
+        if: ${{ inputs.run_migrations || inputs.seed_database }}
+        shell: bash
+        run: |
+          response_file="$(mktemp)"
+          status_code="$(
+            curl --silent --show-error --max-time 240 \
+              --write-out "%{http_code}" \
+              --output "$response_file" \
+              "${PRODUCTION_APP_URL%/}/__ds_art_deploy_runner.php?token=${DEPLOY_RUNNER_TOKEN}&migrate=${{ inputs.run_migrations }}&seed=${{ inputs.seed_database }}"
+          )"
+
+          cat "$response_file"
+          echo
+
+          if [ "$status_code" != "200" ] || ! grep -q '"ok":true' "$response_file"; then
+            echo "Server-side database task failed with HTTP $status_code"
+            exit 1
+          fi
+
+      - name: Remove temporary deploy runner
+        if: ${{ always() && (inputs.run_migrations || inputs.seed_database) }}
+        shell: bash
+        run: |
+          PUBLIC_DIR="${FTP_PUBLIC_DIR:-/public_html}"
+
+          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "$FTP_HOST" <<EOF
+          set ftp:ssl-allow true
+          set ftp:passive-mode true
+          set net:max-retries 2
+          set net:timeout 20
+          rm -f "$PUBLIC_DIR/__ds_art_deploy_runner.php"
           bye
           EOF

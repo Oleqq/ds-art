@@ -12,7 +12,7 @@
 
 Он собирает проект в GitHub Actions и загружает файлы на хостинг по FTP. Workflow не запускается автоматически на каждый push. Его нужно запускать руками из GitHub: `Actions -> deploy production over ftp -> Run workflow`.
 
-Важно: обычный FTP-деплой обновляет только файлы. В workflow добавлены ручные флаги для миграций и первичного seed, но они сработают только если хостинг разрешает GitHub Actions подключаться к production MySQL извне. `storage:link`, права папок и production `.env` все равно нужно настроить на хостинге отдельно.
+Важно: обычный FTP-деплой обновляет только файлы. В workflow добавлены ручные флаги для миграций и первичного seed. Из-за того, что MySQL на Beget может не принимать внешние подключения от GitHub Actions, миграции запускаются уже после загрузки файлов через временный защищенный PHP-runner на самом хостинге. `storage:link`, права папок и production `.env` все равно нужно настроить на хостинге отдельно.
 
 ## Лучший Вариант На Хостинге
 
@@ -118,12 +118,6 @@ Repository -> Settings -> Secrets and variables -> Actions
 FTP_HOST
 FTP_USERNAME
 FTP_PASSWORD
-PRODUCTION_APP_KEY
-PRODUCTION_DB_HOST
-PRODUCTION_DB_PORT
-PRODUCTION_DB_DATABASE
-PRODUCTION_DB_USERNAME
-PRODUCTION_DB_PASSWORD
 ```
 
 Добавить repository variables:
@@ -159,11 +153,11 @@ php artisan migrate --force
 php artisan db:seed --force
 ```
 
-2. SSH нет, но GitHub Actions может подключиться к MySQL хостинга: запустить workflow вручную с `run_migrations=true`.
+2. SSH нет: убедиться, что production `.env` лежит на сервере в `ds-art-app/.env`, затем запустить workflow вручную с `run_migrations=true`.
 
 `seed_database=true` включать только один раз на пустой production-базе, если нужны тестовые пользователи, Анна Волкова и стартовая база знаний. Повторно seed на живой базе не запускать: сидеры обновляют demo-структуру и могут удалить пользователей/сотрудников, которых нет в demo-наборе.
 
-3. SSH нет и внешний MySQL заблокирован: импортировать SQL dump через phpMyAdmin/Adminer.
+3. Если server-side migration runner падает из-за production `.env`, прав папок или версии PHP, импортировать SQL dump через phpMyAdmin/Adminer либо попросить SSH/терминал у хостинга.
 
 Без одного из этих шагов таблицы и столбцы не появятся. Простая загрузка файлов по FTP базу не создаст.
 
@@ -201,7 +195,7 @@ php artisan storage:link
 5. Для первого запуска базы включить `run_migrations=true`. `seed_database=true` включать только на пустой базе и только один раз.
 6. Дождаться успешного завершения.
 
-Если шаг миграций падает с timeout, connection refused или access denied, значит production MySQL недоступен для GitHub Actions. Тогда базу нужно развернуть через SSH или phpMyAdmin/Adminer.
+Если шаг `Run server-side production database tasks` падает, открыть лог этого шага. Чаще всего причина в том, что на сервере нет `ds-art-app/.env`, неверные DB-параметры в `.env`, нет прав на `storage` / `bootstrap/cache`, либо web PHP не той версии.
 
 После деплоя проверить:
 
@@ -222,11 +216,10 @@ php artisan storage:link
 - выполняет `npm ci`;
 - выполняет `npm run build`;
 - чистит локальные Laravel cache перед упаковкой;
-- при ручном флаге `run_migrations` создает временный `.env` в GitHub Actions и запускает `php artisan migrate --force`;
-- при ручном флаге `seed_database` запускает `php artisan db:seed --force`;
 - загружает backend Laravel по FTP в `FTP_APP_DIR`;
 - загружает публичные файлы из `public` по FTP в `FTP_PUBLIC_DIR` или `/public_html`, если переменная не задана;
 - автоматически переписывает `public_html/index.php` под split-схему `public_html -> ../ds-art-app`.
+- при ручных флагах `run_migrations` / `seed_database` создает временный `__ds_art_deploy_runner.php` в публичной папке, вызывает его по одноразовому токену, запускает `php artisan migrate --force` / `php artisan db:seed --force` уже на хостинге и затем удаляет runner по FTP.
 
 Workflow не загружает:
 

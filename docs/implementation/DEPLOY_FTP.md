@@ -318,17 +318,20 @@ mysqldump -h 127.0.0.1 -P 3306 -u root ds_art > ds_art_prod.sql
 
 Если `mysqldump` недоступен, экспортировать через Adminer/phpMyAdmin локально.
 
-### Вариант GitHub Actions + FTP + Прямой MySQL
+### Вариант GitHub Actions + FTP + Server-Side Migrations
 
-Если SSH нет, но Beget разрешает подключение к production MySQL извне, можно выполнить миграции из GitHub Actions:
+Если SSH нет, workflow может загрузить файлы по FTP и затем запустить миграции уже на самом хостинге через временный защищенный PHP-runner:
 
-1. В GitHub Actions secrets добавить `PRODUCTION_APP_KEY`, `PRODUCTION_DB_HOST`, `PRODUCTION_DB_PORT`, `PRODUCTION_DB_DATABASE`, `PRODUCTION_DB_USERNAME`, `PRODUCTION_DB_PASSWORD`.
-2. В GitHub Actions variables добавить `PRODUCTION_APP_URL`, `FTP_APP_DIR=/ds-art-app`, `FTP_PUBLIC_DIR=/public_html`.
-3. Запустить workflow `deploy production over ftp` вручную.
-4. Для первого запуска включить `run_migrations=true`.
-5. `seed_database=true` включать только один раз на пустой production-БД, если нужны стартовые demo-данные.
+1. На сервере должен лежать production `.env`: `/ds-art-app/.env`.
+2. В GitHub Actions secrets добавить `FTP_HOST`, `FTP_USERNAME`, `FTP_PASSWORD`.
+3. В GitHub Actions variables добавить `PRODUCTION_APP_URL`, `FTP_APP_DIR=/ds-art-app`, `FTP_PUBLIC_DIR=/public_html`.
+4. Запустить workflow `deploy production over ftp` вручную.
+5. Для первого запуска включить `run_migrations=true`.
+6. `seed_database=true` включать только один раз на пустой production-БД, если нужны стартовые demo-данные.
 
-Если workflow падает на миграциях с timeout, connection refused или access denied, значит прямое подключение к MySQL с GitHub runner заблокировано. Тогда остается SSH или SQL-импорт через phpMyAdmin/Adminer.
+Workflow создает временный `__ds_art_deploy_runner.php`, вызывает его по одноразовому токену, запускает `php artisan migrate --force` / `php artisan db:seed --force` на хостинге и затем удаляет runner по FTP.
+
+Если шаг server-side миграций падает, сначала проверить `.env` на сервере, DB-параметры, права на `storage` и `bootstrap/cache`, версию web PHP и доступность `vendor/autoload.php`. Если runner недоступен политиками хостинга, остается SSH или SQL-импорт через phpMyAdmin/Adminer.
 
 ## 9. Файлы И Storage
 
