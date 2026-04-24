@@ -67,6 +67,7 @@ php artisan test
 ## Документация
 
 - [Финальный аудит и деплой](docs/implementation/FINAL_AUDIT_AND_DEPLOY.md)
+- [GitHub-деплой](docs/implementation/GITHUB_DEPLOY.md)
 - [FTP-деплой](docs/implementation/DEPLOY_FTP.md)
 - [Статус реализации](docs/implementation/STATUS.md)
 - [Фазы реализации](docs/implementation/phases)

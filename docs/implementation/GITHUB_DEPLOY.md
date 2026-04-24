@@ -1,0 +1,226 @@
+# GitHub Deploy На Реальный Домен
+
+Дата: 24.04.2026.
+
+## Коротко
+
+В репозитории добавлен ручной workflow:
+
+```text
+.github/workflows/deploy-production-ftp.yml
+```
+
+Он собирает проект в GitHub Actions и загружает файлы на хостинг по FTP. Workflow не запускается автоматически на каждый push. Его нужно запускать руками из GitHub: `Actions -> deploy production over ftp -> Run workflow`.
+
+Важно: FTP-деплой обновляет только файлы. Он не запускает миграции, не импортирует базу, не создает `storage:link` и не чинит права папок. Для первого production-включения базу и storage нужно настроить отдельно.
+
+## Лучший Вариант На Хостинге
+
+Попросить у Project Manager или у поддержки хостинга:
+
+- SSH-доступ;
+- Composer на сервере;
+- PHP CLI той же версии, что web PHP;
+- возможность выставить document root домена на папку `ds-art-app/public`;
+- доступ к phpMyAdmin/Adminer;
+- возможность создать symlink `public/storage -> storage/app/public`.
+
+Если SSH дадут, деплой станет нормальным:
+
+```bash
+git pull
+composer install --no-dev --optimize-autoloader
+php artisan migrate --force
+php artisan storage:link
+php artisan optimize
+```
+
+## Временный Вариант Через GitHub Actions + FTP
+
+Этот вариант подходит, если SSH пока нет, но есть FTP и доступ к панели хостинга.
+
+### 1. Настроить Папки На Хостинге
+
+Рекомендуемая структура:
+
+```text
+/home/account/
+  ds-art-app/
+    app/
+    bootstrap/
+    config/
+    public/
+    storage/
+    vendor/
+    .env
+
+  public_html/  не используется как корень проекта, если document root можно сменить
+```
+
+Самое правильное: выставить document root домена на:
+
+```text
+/home/account/ds-art-app/public
+```
+
+Если хостинг не позволяет менять document root, этот FTP workflow нужно адаптировать под раздельную загрузку `public` в `public_html` и правку `public/index.php`. Для Laravel это хуже и рискованнее.
+
+### 2. Создать Production `.env`
+
+На сервере в папке `ds-art-app` создать `.env` на основе:
+
+```text
+.env.production.example
+```
+
+Минимально заменить:
+
+```env
+APP_ENV=production
+APP_DEBUG=false
+APP_URL=https://real-domain.ru
+APP_KEY=base64:REAL_GENERATED_KEY
+
+DB_CONNECTION=mysql
+DB_HOST=...
+DB_PORT=3306
+DB_DATABASE=...
+DB_USERNAME=...
+DB_PASSWORD=...
+
+FILESYSTEM_DISK=public
+QUEUE_CONNECTION=sync
+CACHE_STORE=file
+SESSION_DRIVER=file
+```
+
+`APP_KEY` можно сгенерировать локально:
+
+```powershell
+php artisan key:generate --show
+```
+
+### 3. Настроить GitHub Secrets И Variables
+
+В GitHub:
+
+```text
+Repository -> Settings -> Secrets and variables -> Actions
+```
+
+Добавить secrets:
+
+```text
+FTP_HOST
+FTP_USERNAME
+FTP_PASSWORD
+```
+
+Добавить repository variable:
+
+```text
+FTP_APP_DIR
+```
+
+Пример `FTP_APP_DIR`:
+
+```text
+/ds-art-app
+```
+
+Точный путь зависит от FTP-корня. Если при подключении по FTP ты уже находишься в домашней папке аккаунта, обычно достаточно `/ds-art-app`. Если FTP открывается внутри другой директории, путь нужно проверить в файловом менеджере хостинга.
+
+### 4. База Данных
+
+Для первого запуска нужен один из вариантов:
+
+1. SSH есть: выполнить миграции на сервере.
+
+```bash
+php artisan migrate --force
+php artisan db:seed --force
+```
+
+2. SSH нет: импортировать SQL dump через phpMyAdmin/Adminer.
+
+Без этого таблицы и столбцы не появятся. GitHub Actions по FTP их не создаст.
+
+### 5. Storage
+
+Нужно, чтобы Laravel мог писать в:
+
+```text
+storage/
+bootstrap/cache/
+```
+
+И чтобы публичные файлы открывались через:
+
+```text
+public/storage -> storage/app/public
+```
+
+Если SSH есть:
+
+```bash
+php artisan storage:link
+```
+
+Если SSH нет, symlink нужно создать через панель хостинга или попросить поддержку.
+
+### 6. Запуск Деплоя
+
+После настройки secrets:
+
+1. Открыть GitHub репозиторий `DS-Art`.
+2. Перейти в `Actions`.
+3. Выбрать `deploy production over ftp`.
+4. Нажать `Run workflow`.
+5. Дождаться успешного завершения.
+
+После деплоя проверить:
+
+- `/login`;
+- вход под админом;
+- вход под Анной;
+- `/admin/knowledge-base`;
+- `/admin/access`;
+- создание тестовой статьи;
+- загрузку изображения;
+- открытие загруженного файла из браузера.
+
+## Что Workflow Делает
+
+- ставит PHP 8.4;
+- ставит Node 22;
+- выполняет `composer install --no-dev --optimize-autoloader`;
+- выполняет `npm ci`;
+- выполняет `npm run build`;
+- чистит локальные Laravel cache перед упаковкой;
+- загружает проект по FTP в `FTP_APP_DIR`.
+
+Workflow не загружает:
+
+- `.env`;
+- `.env.production`;
+- `auth.json`;
+- `node_modules`;
+- `tests`;
+- `docs/private`;
+- текущие пользовательские файлы из `storage/app/public`;
+- `public/storage`.
+
+Это сделано специально, чтобы не затереть production-секреты и загруженные пользователями файлы.
+
+## Когда Появится SSH
+
+После получения SSH лучше заменить FTP workflow на SSH-deploy:
+
+- `git pull` на сервере;
+- `composer install`;
+- `npm run build` либо загрузка готового `public/build`;
+- `php artisan migrate --force`;
+- `php artisan optimize`;
+- нормальный rollback через git.
+
+Это будет заметно безопаснее для production.

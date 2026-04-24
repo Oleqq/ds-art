@@ -1,0 +1,105 @@
+name: deploy production over ftp
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: production-ftp
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and upload production files
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      FTP_HOST: ${{ secrets.FTP_HOST }}
+      FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+      FTP_APP_DIR: ${{ vars.FTP_APP_DIR }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate deployment variables
+        shell: bash
+        run: |
+          test -n "$FTP_HOST" || (echo "Missing secret FTP_HOST" && exit 1)
+          test -n "$FTP_USERNAME" || (echo "Missing secret FTP_USERNAME" && exit 1)
+          test -n "$FTP_PASSWORD" || (echo "Missing secret FTP_PASSWORD" && exit 1)
+          test -n "$FTP_APP_DIR" || (echo "Missing repository variable FTP_APP_DIR" && exit 1)
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer:v2
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install PHP dependencies
+        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build frontend assets
+        run: npm run build
+
+      - name: Clear local framework caches before packaging
+        run: |
+          php artisan config:clear
+          php artisan route:clear
+          php artisan view:clear
+          php artisan event:clear
+
+      - name: Prepare deploy package
+        shell: bash
+        run: |
+          DEPLOY_DIR="$RUNNER_TEMP/ds-art-app"
+          mkdir -p "$DEPLOY_DIR"
+          rsync -a --delete ./ "$DEPLOY_DIR/" \
+            --exclude=".git/" \
+            --exclude=".github/" \
+            --exclude=".env" \
+            --exclude=".env.backup" \
+            --exclude=".env.production" \
+            --exclude="auth.json" \
+            --exclude="node_modules/" \
+            --exclude="tests/" \
+            --exclude="docs/private/" \
+            --exclude="storage/app/public/*" \
+            --exclude="storage/framework/cache/data/*" \
+            --exclude="storage/framework/sessions/*" \
+            --exclude="storage/framework/views/*" \
+            --exclude="storage/logs/*"
+          echo "DEPLOY_DIR=$DEPLOY_DIR" >> "$GITHUB_ENV"
+
+      - name: Install lftp
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lftp
+
+      - name: Upload package over FTP
+        shell: bash
+        run: |
+          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "$FTP_HOST" <<EOF
+          set ftp:ssl-allow true
+          set ftp:passive-mode true
+          set net:max-retries 2
+          set net:timeout 20
+          mkdir -p "$FTP_APP_DIR"
+          mirror -R --delete --verbose --parallel=4 \
+            --exclude-glob .env \
+            --exclude-glob storage/app/public/* \
+            --exclude-glob public/storage \
+            "$DEPLOY_DIR" "$FTP_APP_DIR"
+          bye
+          EOF
