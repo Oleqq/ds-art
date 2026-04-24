@@ -2,6 +2,17 @@ name: deploy production over ftp
 
 on:
   workflow_dispatch:
+    inputs:
+      run_migrations:
+        description: Run production database migrations from GitHub Actions
+        required: true
+        type: boolean
+        default: false
+      seed_database:
+        description: Seed demo data after migrations. Use only once on an empty production database.
+        required: true
+        type: boolean
+        default: false
 
 concurrency:
   group: production-ftp
@@ -18,6 +29,13 @@ jobs:
       FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
       FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
       FTP_APP_DIR: ${{ vars.FTP_APP_DIR }}
+      PRODUCTION_APP_URL: ${{ vars.PRODUCTION_APP_URL }}
+      PRODUCTION_APP_KEY: ${{ secrets.PRODUCTION_APP_KEY }}
+      PRODUCTION_DB_HOST: ${{ secrets.PRODUCTION_DB_HOST }}
+      PRODUCTION_DB_PORT: ${{ secrets.PRODUCTION_DB_PORT }}
+      PRODUCTION_DB_DATABASE: ${{ secrets.PRODUCTION_DB_DATABASE }}
+      PRODUCTION_DB_USERNAME: ${{ secrets.PRODUCTION_DB_USERNAME }}
+      PRODUCTION_DB_PASSWORD: ${{ secrets.PRODUCTION_DB_PASSWORD }}
 
     steps:
       - name: Checkout
@@ -30,6 +48,16 @@ jobs:
           test -n "$FTP_USERNAME" || (echo "Missing secret FTP_USERNAME" && exit 1)
           test -n "$FTP_PASSWORD" || (echo "Missing secret FTP_PASSWORD" && exit 1)
           test -n "$FTP_APP_DIR" || (echo "Missing repository variable FTP_APP_DIR" && exit 1)
+
+          if [ "${{ inputs.run_migrations }}" = "true" ] || [ "${{ inputs.seed_database }}" = "true" ]; then
+            test -n "$PRODUCTION_APP_URL" || (echo "Missing repository variable PRODUCTION_APP_URL" && exit 1)
+            test -n "$PRODUCTION_APP_KEY" || (echo "Missing secret PRODUCTION_APP_KEY" && exit 1)
+            test -n "$PRODUCTION_DB_HOST" || (echo "Missing secret PRODUCTION_DB_HOST" && exit 1)
+            test -n "$PRODUCTION_DB_PORT" || (echo "Missing secret PRODUCTION_DB_PORT" && exit 1)
+            test -n "$PRODUCTION_DB_DATABASE" || (echo "Missing secret PRODUCTION_DB_DATABASE" && exit 1)
+            test -n "$PRODUCTION_DB_USERNAME" || (echo "Missing secret PRODUCTION_DB_USERNAME" && exit 1)
+            test -n "$PRODUCTION_DB_PASSWORD" || (echo "Missing secret PRODUCTION_DB_PASSWORD" && exit 1)
+          fi
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -59,6 +87,57 @@ jobs:
           php artisan route:clear
           php artisan view:clear
           php artisan event:clear
+
+      - name: Create production environment file for database tasks
+        if: ${{ inputs.run_migrations || inputs.seed_database }}
+        shell: bash
+        run: |
+          cat > .env <<EOF
+          APP_NAME="DS Art"
+          APP_ENV=production
+          APP_KEY=$PRODUCTION_APP_KEY
+          APP_DEBUG=false
+          APP_URL=$PRODUCTION_APP_URL
+
+          APP_LOCALE=ru
+          APP_FALLBACK_LOCALE=ru
+          APP_FAKER_LOCALE=ru_RU
+
+          LOG_CHANNEL=stack
+          LOG_STACK=single
+          LOG_LEVEL=error
+
+          DB_CONNECTION=mysql
+          DB_HOST=$PRODUCTION_DB_HOST
+          DB_PORT=$PRODUCTION_DB_PORT
+          DB_DATABASE=$PRODUCTION_DB_DATABASE
+          DB_USERNAME=$PRODUCTION_DB_USERNAME
+          DB_PASSWORD=$PRODUCTION_DB_PASSWORD
+
+          SESSION_DRIVER=file
+          SESSION_LIFETIME=120
+          SESSION_ENCRYPT=false
+          SESSION_PATH=/
+          SESSION_DOMAIN=null
+
+          CACHE_STORE=file
+          QUEUE_CONNECTION=sync
+          FILESYSTEM_DISK=public
+
+          MAIL_MAILER=log
+          MAIL_FROM_ADDRESS="no-reply@example.com"
+          MAIL_FROM_NAME="\${APP_NAME}"
+
+          VITE_APP_NAME="\${APP_NAME}"
+          EOF
+
+      - name: Run production database migrations
+        if: ${{ inputs.run_migrations }}
+        run: php artisan migrate --force --no-interaction
+
+      - name: Seed production database once
+        if: ${{ inputs.seed_database }}
+        run: php artisan db:seed --force --no-interaction
 
       - name: Prepare deploy package
         shell: bash

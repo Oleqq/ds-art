@@ -12,7 +12,7 @@
 
 Он собирает проект в GitHub Actions и загружает файлы на хостинг по FTP. Workflow не запускается автоматически на каждый push. Его нужно запускать руками из GitHub: `Actions -> deploy production over ftp -> Run workflow`.
 
-Важно: FTP-деплой обновляет только файлы. Он не запускает миграции, не импортирует базу, не создает `storage:link` и не чинит права папок. Для первого production-включения базу и storage нужно настроить отдельно.
+Важно: обычный FTP-деплой обновляет только файлы. В workflow добавлены ручные флаги для миграций и первичного seed, но они сработают только если хостинг разрешает GitHub Actions подключаться к production MySQL извне. `storage:link`, права папок и production `.env` все равно нужно настроить на хостинге отдельно.
 
 ## Лучший Вариант На Хостинге
 
@@ -114,12 +114,19 @@ Repository -> Settings -> Secrets and variables -> Actions
 FTP_HOST
 FTP_USERNAME
 FTP_PASSWORD
+PRODUCTION_APP_KEY
+PRODUCTION_DB_HOST
+PRODUCTION_DB_PORT
+PRODUCTION_DB_DATABASE
+PRODUCTION_DB_USERNAME
+PRODUCTION_DB_PASSWORD
 ```
 
-Добавить repository variable:
+Добавить repository variables:
 
 ```text
 FTP_APP_DIR
+PRODUCTION_APP_URL
 ```
 
 Пример `FTP_APP_DIR`:
@@ -141,9 +148,13 @@ php artisan migrate --force
 php artisan db:seed --force
 ```
 
-2. SSH нет: импортировать SQL dump через phpMyAdmin/Adminer.
+2. SSH нет, но GitHub Actions может подключиться к MySQL хостинга: запустить workflow вручную с `run_migrations=true`.
 
-Без этого таблицы и столбцы не появятся. GitHub Actions по FTP их не создаст.
+`seed_database=true` включать только один раз на пустой production-базе, если нужны тестовые пользователи, Анна Волкова и стартовая база знаний. Повторно seed на живой базе не запускать: сидеры обновляют demo-структуру и могут удалить пользователей/сотрудников, которых нет в demo-наборе.
+
+3. SSH нет и внешний MySQL заблокирован: импортировать SQL dump через phpMyAdmin/Adminer.
+
+Без одного из этих шагов таблицы и столбцы не появятся. Простая загрузка файлов по FTP базу не создаст.
 
 ### 5. Storage
 
@@ -176,7 +187,10 @@ php artisan storage:link
 2. Перейти в `Actions`.
 3. Выбрать `deploy production over ftp`.
 4. Нажать `Run workflow`.
-5. Дождаться успешного завершения.
+5. Для первого запуска базы включить `run_migrations=true`. `seed_database=true` включать только на пустой базе и только один раз.
+6. Дождаться успешного завершения.
+
+Если шаг миграций падает с timeout, connection refused или access denied, значит production MySQL недоступен для GitHub Actions. Тогда базу нужно развернуть через SSH или phpMyAdmin/Adminer.
 
 После деплоя проверить:
 
@@ -197,6 +211,8 @@ php artisan storage:link
 - выполняет `npm ci`;
 - выполняет `npm run build`;
 - чистит локальные Laravel cache перед упаковкой;
+- при ручном флаге `run_migrations` создает временный `.env` в GitHub Actions и запускает `php artisan migrate --force`;
+- при ручном флаге `seed_database` запускает `php artisan db:seed --force`;
 - загружает проект по FTP в `FTP_APP_DIR`.
 
 Workflow не загружает:
