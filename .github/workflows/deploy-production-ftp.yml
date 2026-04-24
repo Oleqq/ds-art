@@ -29,6 +29,7 @@ jobs:
       FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
       FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
       FTP_APP_DIR: ${{ vars.FTP_APP_DIR }}
+      FTP_PUBLIC_DIR: ${{ vars.FTP_PUBLIC_DIR }}
       PRODUCTION_APP_URL: ${{ vars.PRODUCTION_APP_URL }}
       PRODUCTION_APP_KEY: ${{ secrets.PRODUCTION_APP_KEY }}
       PRODUCTION_DB_HOST: ${{ secrets.PRODUCTION_DB_HOST }}
@@ -142,9 +143,12 @@ jobs:
       - name: Prepare deploy package
         shell: bash
         run: |
-          DEPLOY_DIR="$RUNNER_TEMP/ds-art-app"
-          mkdir -p "$DEPLOY_DIR"
-          rsync -a --delete ./ "$DEPLOY_DIR/" \
+          APP_DEPLOY_DIR="$RUNNER_TEMP/ds-art-app"
+          PUBLIC_DEPLOY_DIR="$RUNNER_TEMP/ds-art-public"
+
+          mkdir -p "$APP_DEPLOY_DIR" "$PUBLIC_DEPLOY_DIR"
+
+          rsync -a --delete ./ "$APP_DEPLOY_DIR/" \
             --exclude=".git/" \
             --exclude=".github/" \
             --exclude=".env" \
@@ -159,7 +163,33 @@ jobs:
             --exclude="storage/framework/sessions/*" \
             --exclude="storage/framework/views/*" \
             --exclude="storage/logs/*"
-          echo "DEPLOY_DIR=$DEPLOY_DIR" >> "$GITHUB_ENV"
+
+          rsync -a --delete "$APP_DEPLOY_DIR/public/" "$PUBLIC_DEPLOY_DIR/" \
+            --exclude="storage" \
+            --exclude="storage/*"
+
+          cat > "$PUBLIC_DEPLOY_DIR/index.php" <<'PHP'
+          <?php
+
+          use Illuminate\Foundation\Application;
+          use Illuminate\Http\Request;
+
+          define('LARAVEL_START', microtime(true));
+
+          if (file_exists($maintenance = __DIR__.'/../ds-art-app/storage/framework/maintenance.php')) {
+              require $maintenance;
+          }
+
+          require __DIR__.'/../ds-art-app/vendor/autoload.php';
+
+          /** @var Application $app */
+          $app = require_once __DIR__.'/../ds-art-app/bootstrap/app.php';
+
+          $app->handleRequest(Request::capture());
+          PHP
+
+          echo "APP_DEPLOY_DIR=$APP_DEPLOY_DIR" >> "$GITHUB_ENV"
+          echo "PUBLIC_DEPLOY_DIR=$PUBLIC_DEPLOY_DIR" >> "$GITHUB_ENV"
 
       - name: Install lftp
         run: |
@@ -169,16 +199,25 @@ jobs:
       - name: Upload package over FTP
         shell: bash
         run: |
+          PUBLIC_DIR="${FTP_PUBLIC_DIR:-/public_html}"
+
           lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "$FTP_HOST" <<EOF
           set ftp:ssl-allow true
           set ftp:passive-mode true
           set net:max-retries 2
           set net:timeout 20
           mkdir -p "$FTP_APP_DIR"
+          mkdir -p "$PUBLIC_DIR"
           mirror -R --delete --verbose --parallel=4 \
             --exclude-glob .env \
             --exclude-glob storage/app/public/* \
             --exclude-glob public/storage \
-            "$DEPLOY_DIR" "$FTP_APP_DIR"
+            "$APP_DEPLOY_DIR" "$FTP_APP_DIR"
+          mirror -R --delete --verbose --parallel=4 \
+            --exclude-glob storage \
+            --exclude-glob storage/* \
+            --exclude-glob .well-known \
+            --exclude-glob .well-known/* \
+            "$PUBLIC_DEPLOY_DIR" "$PUBLIC_DIR"
           bye
           EOF

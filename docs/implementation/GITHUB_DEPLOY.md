@@ -41,7 +41,7 @@ php artisan optimize
 
 ### 1. Настроить Папки На Хостинге
 
-Рекомендуемая структура:
+Текущий workflow использует split-схему, поэтому document root менять не обязательно:
 
 ```text
 /home/account/
@@ -54,16 +54,20 @@ php artisan optimize
     vendor/
     .env
 
-  public_html/  не используется как корень проекта, если document root можно сменить
+  public_html/
+    index.php
+    .htaccess
+    build/
 ```
 
-Самое правильное: выставить document root домена на:
+Laravel-приложение загружается в `ds-art-app`, а содержимое папки `public` загружается в `public_html`. Workflow автоматически заменяет `public_html/index.php`, чтобы он подключал приложение из:
 
 ```text
-/home/account/ds-art-app/public
+../ds-art-app/vendor/autoload.php
+../ds-art-app/bootstrap/app.php
 ```
 
-Если хостинг не позволяет менять document root, этот FTP workflow нужно адаптировать под раздельную загрузку `public` в `public_html` и правку `public/index.php`. Для Laravel это хуже и рискованнее.
+Важно: в `public_html` не должен лежать весь Laravel-проект. Там должны быть только публичные файлы.
 
 ### 2. Создать Production `.env`
 
@@ -126,6 +130,7 @@ PRODUCTION_DB_PASSWORD
 
 ```text
 FTP_APP_DIR
+FTP_PUBLIC_DIR
 PRODUCTION_APP_URL
 ```
 
@@ -133,6 +138,12 @@ PRODUCTION_APP_URL
 
 ```text
 /ds-art-app
+```
+
+Пример `FTP_PUBLIC_DIR`:
+
+```text
+/public_html
 ```
 
 Точный путь зависит от FTP-корня. Если при подключении по FTP ты уже находишься в домашней папке аккаунта, обычно достаточно `/ds-art-app`. Если FTP открывается внутри другой директории, путь нужно проверить в файловом менеджере хостинга.
@@ -213,7 +224,9 @@ php artisan storage:link
 - чистит локальные Laravel cache перед упаковкой;
 - при ручном флаге `run_migrations` создает временный `.env` в GitHub Actions и запускает `php artisan migrate --force`;
 - при ручном флаге `seed_database` запускает `php artisan db:seed --force`;
-- загружает проект по FTP в `FTP_APP_DIR`.
+- загружает backend Laravel по FTP в `FTP_APP_DIR`;
+- загружает публичные файлы из `public` по FTP в `FTP_PUBLIC_DIR` или `/public_html`, если переменная не задана;
+- автоматически переписывает `public_html/index.php` под split-схему `public_html -> ../ds-art-app`.
 
 Workflow не загружает:
 
