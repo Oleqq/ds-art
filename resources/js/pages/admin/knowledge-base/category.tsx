@@ -97,6 +97,10 @@ export default function AdminKnowledgeBaseCategory({
         clear_icon_image: false,
         cover_url: item.cover_url ?? '',
         cover: null,
+        cover_position_x: 50,
+        cover_position_y: 50,
+        cover_zoom_percent: 100,
+        cover_height_px: 220,
         clear_cover: false,
         parent_id: item.parent_id ?? categoryFormPayload.parent_id ?? null,
         is_visible_to_employees: item.is_visible_to_employees ?? true,
@@ -114,6 +118,13 @@ export default function AdminKnowledgeBaseCategory({
         formData.append('icon_image_url', payload.icon_image_url ?? '');
         formData.append('clear_icon_image', payload.clear_icon_image ? '1' : '0');
         formData.append('cover_url', payload.cover_url ?? '');
+        formData.append('cover_position_x', String(payload.cover_position_x ?? 50));
+        formData.append('cover_position_y', String(payload.cover_position_y ?? 50));
+        formData.append(
+            'cover_zoom_percent',
+            String(payload.cover_zoom_percent ?? 100),
+        );
+        formData.append('cover_height_px', String(payload.cover_height_px ?? 220));
         formData.append('clear_cover', payload.clear_cover ? '1' : '0');
         formData.append('is_visible_to_employees', payload.is_visible_to_employees ? '1' : '0');
         formData.append('return_to', payload.return_to);
@@ -331,10 +342,14 @@ export default function AdminKnowledgeBaseCategory({
                         { keepReturnTo: true },
                     )
                 }
-                onUploadCover={(file) =>
+                onUploadCover={({ file, presentation }) =>
                     updateCategory(
                         {
                             cover: file,
+                            cover_position_x: presentation.x,
+                            cover_position_y: presentation.y,
+                            cover_zoom_percent: presentation.zoom,
+                            cover_height_px: presentation.height,
                             clear_cover: false,
                         },
                         { keepReturnTo: true },
@@ -401,7 +416,7 @@ export default function AdminKnowledgeBaseCategory({
             <ConfirmModal
                 open={isDeleteOpen}
                 title="Удалить раздел"
-                description={`Раздел «${category.name}» будет удален. Если внутри есть материалы, сначала перенеси их в другой раздел.`}
+                description={`Раздел «${category.name}» будет удален вместе с вложенными подразделами, статьями и файлами без возможности восстановления.`}
                 confirmLabel="Удалить раздел"
                 danger
                 processing={isDeleting}

@@ -22,7 +22,7 @@ class DashboardTest extends TestCase
         $this->actingAs($user);
 
         $response = $this->get(route('dashboard'));
-        $response->assertRedirect(route('employee.dashboard'));
+        $response->assertRedirect(route('employee.knowledge-base.index'));
     }
 
     public function test_admin_users_are_redirected_to_the_admin_dashboard()
@@ -33,7 +33,7 @@ class DashboardTest extends TestCase
 
         $response = $this->actingAs($user)->get(route('dashboard'));
 
-        $response->assertRedirect(route('admin.dashboard'));
+        $response->assertRedirect(route('admin.knowledge-base.index'));
     }
 
     public function test_employee_can_not_open_admin_dashboard()

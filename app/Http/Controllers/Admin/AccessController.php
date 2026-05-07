@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Employee;
 use App\Models\KnowledgeArticle;
 use App\Models\KnowledgeCategory;
 use App\Models\KnowledgeUserArticlePermission;
@@ -10,6 +11,7 @@ use App\Models\KnowledgeUserCategoryPermission;
 use App\Models\KnowledgeUserPermission;
 use App\Models\User;
 use App\Support\Audit\AuditLogger;
+use App\Support\Employees\EmployeeActivationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +26,9 @@ class AccessController extends Controller
         $employees = User::query()
             ->with('employee')
             ->where('role', User::ROLE_EMPLOYEE)
+            ->whereNotNull('employee_id')
+            ->whereHas('employee')
+            ->orderByRaw("case when exists (select 1 from employees where employees.id = users.employee_id and employees.status = 'active') then 0 else 1 end")
             ->orderBy('name')
             ->get();
 
@@ -46,30 +51,45 @@ class AccessController extends Controller
         $hasExplicitPermission = $selectedUser
             ? $selectedUser->knowledgePermission()->exists()
             : false;
-
-        $categoryPermissions = $selectedUser
+        $selectedCategoryIds = $selectedUser
             ? $selectedUser->knowledgeCategoryPermissions()
-                ->pluck('can_view', 'knowledge_category_id')
-                ->map(fn ($value) => (bool) $value)
+                ->where('can_view', true)
+                ->pluck('knowledge_category_id')
+                ->map(fn ($id) => (int) $id)
+                ->all()
+            : [];
+        $selectedArticleIds = $selectedUser
+            ? $selectedUser->knowledgeArticlePermissions()
+                ->where('can_view', true)
+                ->pluck('knowledge_article_id')
+                ->map(fn ($id) => (int) $id)
                 ->all()
             : [];
 
-        $articlePermissions = $selectedUser
-            ? $selectedUser->knowledgeArticlePermissions()
-                ->pluck('can_view', 'knowledge_article_id')
-                ->map(fn ($value) => (bool) $value)
-                ->all()
-            : [];
+        $activationService = app(EmployeeActivationService::class);
 
         return Inertia::render('admin/access/index', [
-            'employees' => $employees->map(fn (User $user) => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'position' => $user->employee?->position ?? 'Сотрудник',
-                'avatar' => $user->employee?->photo_url,
-                'is_active' => (bool) $user->is_active,
-            ])->values(),
+            'employees' => $employees->map(function (User $user) use ($activationService): array {
+                $employee = $user->employee;
+                $isActive = $employee
+                    ? $employee->status === Employee::STATUS_ACTIVE
+                    : (bool) $user->is_active;
+
+                return [
+                    'id' => $user->id,
+                    'employee_id' => $employee?->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'position' => $employee?->position ?? 'Сотрудник',
+                    'avatar' => $employee?->photo_url,
+                    'is_active' => $isActive,
+                    'can_toggle_status' => ! (
+                        $isActive
+                        && $employee
+                        && ! $activationService->canDeactivateEmployee($employee)
+                    ),
+                ];
+            })->values(),
             'selectedUserId' => $selectedUser?->id,
             'permission' => $permission ? [
                 'is_deactivated' => (bool) $permission->is_deactivated,
@@ -89,8 +109,9 @@ class AccessController extends Controller
                 'default_visible' => (bool) $category->is_visible_to_employees,
                 'can_view' => $this->categoryCanView(
                     $category,
-                    $categoryPermissions,
+                    $permission,
                     $hasExplicitPermission,
+                    $selectedCategoryIds,
                 ),
                 'articles_count' => $category->articles->count(),
                 'articles' => $category->articles->map(fn (KnowledgeArticle $article) => [
@@ -100,9 +121,11 @@ class AccessController extends Controller
                     'is_published' => (bool) $article->is_published,
                     'can_view' => $this->articleCanView(
                         $article,
-                        $articlePermissions,
-                        $hasExplicitPermission
-                            && ! (bool) ($permission?->view_all_articles ?? true),
+                        $category,
+                        $permission,
+                        $hasExplicitPermission,
+                        $selectedCategoryIds,
+                        $selectedArticleIds,
                     ),
                     'updated_at' => $article->updated_at?->format('d.m.Y H:i'),
                 ])->values(),
@@ -114,6 +137,7 @@ class AccessController extends Controller
         Request $request,
         User $user,
         AuditLogger $auditLogger,
+        EmployeeActivationService $activationService,
     ): RedirectResponse {
         abort_unless($user->isEmployee(), 404);
 
@@ -130,8 +154,28 @@ class AccessController extends Controller
             'article_ids.*' => ['integer', 'exists:knowledge_articles,id'],
         ]);
 
+        $requestedCategoryIds = collect($payload['category_ids'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+        $requestedArticleIds = collect($payload['article_ids'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $selectedCategoryIds = $payload['view_all_articles']
+            ? KnowledgeCategory::query()->pluck('id')->all()
+            : $requestedCategoryIds;
+        $selectedArticleIds = $payload['view_all_articles']
+            ? KnowledgeArticle::query()->pluck('id')->all()
+            : $requestedArticleIds;
+
         $before = [
             'permission' => $user->knowledgePermission?->toArray(),
+            'user_is_active' => (bool) $user->is_active,
+            'employee_status' => $user->employee?->status,
             'category_ids' => $user->knowledgeCategoryPermissions()
                 ->where('can_view', true)
                 ->pluck('knowledge_category_id')
@@ -142,7 +186,16 @@ class AccessController extends Controller
                 ->all(),
         ];
 
-        DB::transaction(function () use ($request, $payload, $user): void {
+        if ($payload['is_deactivated'] && ! $activationService->canDeactivateUser($user)) {
+            Inertia::flash('toast', [
+                'type' => 'error',
+                'message' => 'Аккаунты руководства нельзя деактивировать.',
+            ]);
+
+            return back();
+        }
+
+        DB::transaction(function () use ($request, $payload, $user, $activationService, $selectedCategoryIds, $selectedArticleIds): void {
             KnowledgeUserPermission::query()->updateOrCreate(
                 ['user_id' => $user->id],
                 [
@@ -156,11 +209,12 @@ class AccessController extends Controller
                 ],
             );
 
-            $this->syncCategoryPermissions($user, $payload['category_ids'] ?? []);
-            $this->syncArticlePermissions($user, $payload['article_ids'] ?? []);
+            $activationService->syncUserStatus($user, ! $payload['is_deactivated']);
+            $this->syncCategoryPermissions($user, $selectedCategoryIds);
+            $this->syncArticlePermissions($user, $selectedArticleIds);
         });
 
-        $user->refresh()->loadMissing('knowledgePermission');
+        $user->refresh()->loadMissing('employee', 'knowledgePermission');
 
         $auditLogger->record(
             request: $request,
@@ -169,10 +223,17 @@ class AccessController extends Controller
             before: $before,
             after: [
                 'permission' => $user->knowledgePermission?->toArray(),
-                'category_ids' => $payload['category_ids'] ?? [],
-                'article_ids' => $payload['article_ids'] ?? [],
+                'user_is_active' => (bool) $user->is_active,
+                'employee_status' => $user->employee?->status,
+                'category_ids' => $selectedCategoryIds,
+                'article_ids' => $selectedArticleIds,
             ],
         );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Изменения прав доступа сохранены.',
+        ]);
 
         return back()->with('success', 'Права сотрудника обновлены.');
     }
@@ -251,34 +312,45 @@ class AccessController extends Controller
             ]);
     }
 
-    /**
-     * @param  array<int, bool>  $permissions
-     */
     private function categoryCanView(
         KnowledgeCategory $category,
-        array $permissions,
+        ?KnowledgeUserPermission $permission,
         bool $hasExplicitPermission,
+        array $selectedCategoryIds,
     ): bool {
-        if (array_key_exists($category->id, $permissions)) {
-            return $permissions[$category->id];
+        if ((bool) ($permission?->view_all_articles ?? false)) {
+            return true;
         }
 
-        return ! $hasExplicitPermission && (bool) $category->is_visible_to_employees;
+        if ($hasExplicitPermission) {
+            return in_array($category->id, $selectedCategoryIds, true);
+        }
+
+        return (bool) $category->is_visible_to_employees;
     }
 
-    /**
-     * @param  array<int, bool>  $permissions
-     */
     private function articleCanView(
         KnowledgeArticle $article,
-        array $permissions,
-        bool $requiresExplicitSelection,
+        KnowledgeCategory $category,
+        ?KnowledgeUserPermission $permission,
+        bool $hasExplicitPermission,
+        array $selectedCategoryIds,
+        array $selectedArticleIds,
     ): bool {
-        if (array_key_exists($article->id, $permissions)) {
-            return $permissions[$article->id];
+        if ((bool) ($permission?->view_all_articles ?? false)) {
+            return (bool) $article->is_published;
         }
 
-        return ! $requiresExplicitSelection && (bool) $article->is_published;
+        if ($hasExplicitPermission) {
+            return (bool) $article->is_published
+                && (
+                    in_array($category->id, $selectedCategoryIds, true)
+                    || in_array($article->id, $selectedArticleIds, true)
+                );
+        }
+
+        return (bool) $article->is_published
+            && (bool) $category->is_visible_to_employees;
     }
 
     /**

@@ -50,6 +50,7 @@ class KnowledgeBaseSearch
                     ->where('name', 'like', $like)
                     ->orWhere('slug', 'like', $like);
             })
+            ->when(! $user->isAdmin(), fn (Builder $query) => $this->constrainCategoriesToUser($query, $user))
             ->orderBy('sort_order')
             ->orderBy('name')
             ->get()
@@ -79,11 +80,7 @@ class KnowledgeBaseSearch
                 'structureBlocks',
                 'assets',
             ])
-            ->when(! $user->isAdmin(), fn (Builder $query) => $query->where(function (Builder $inner) use ($user): void {
-                $inner
-                    ->where('is_published', true)
-                    ->orWhere('created_by', $user->id);
-            }))
+            ->when(! $user->isAdmin(), fn (Builder $query) => $this->constrainArticlesToUser($query, $user))
             ->where(function (Builder $query) use ($like): void {
                 $query
                     ->where('title', 'like', $like)
@@ -118,6 +115,134 @@ class KnowledgeBaseSearch
                 'scheduled_publish_at' => $article->scheduled_publish_at?->format('Y-m-d\TH:i'),
             ])
             ->values()
+            ->all();
+    }
+
+    private function constrainCategoriesToUser(Builder $query, User $user): void
+    {
+        $permission = $user->knowledgePermission()->first();
+
+        if ($permission?->is_deactivated || $permission?->can_view === false) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        if (! $permission) {
+            $query->where('is_visible_to_employees', true);
+
+            return;
+        }
+
+        if ($permission->view_all_articles) {
+            return;
+        }
+
+        $categoryIds = $this->categoryPermissionIds($user);
+
+        $categoryIds === []
+            ? $query->whereRaw('1 = 0')
+            : $query->whereIn('id', $categoryIds);
+    }
+
+    private function constrainArticlesToUser(Builder $query, User $user): void
+    {
+        $permission = $user->knowledgePermission()->first();
+
+        if ($permission?->is_deactivated || $permission?->can_view === false) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        $query->where(function (Builder $visible) use ($permission, $user): void {
+            $visible
+                ->where('created_by', $user->id)
+                ->orWhere(function (Builder $published) use ($permission, $user): void {
+                    $this->wherePublishedForEmployees($published);
+
+                    if (! $permission) {
+                        $published
+                            ->whereHas('category', fn (Builder $category) => $category
+                                ->where('is_visible_to_employees', true))
+                            ->where(fn (Builder $access) => $this->whereEmployeeAccessLevel($access));
+
+                        return;
+                    }
+
+                    if ($permission->view_all_articles) {
+                        $published->where(fn (Builder $access) => $this->whereEmployeeAccessLevel($access));
+
+                        return;
+                    }
+
+                    $categoryIds = $this->categoryPermissionIds($user);
+                    $articleIds = $this->articlePermissionIds($user);
+
+                    $published->where(function (Builder $allowed) use ($articleIds, $categoryIds): void {
+                        if ($articleIds !== []) {
+                            $allowed->orWhereIn('id', $articleIds);
+                        }
+
+                        if ($categoryIds !== []) {
+                            $allowed->orWhere(function (Builder $byCategory) use ($categoryIds): void {
+                                $byCategory->whereIn('knowledge_category_id', $categoryIds);
+                                $this->whereEmployeeAccessLevel($byCategory);
+                            });
+                        }
+
+                        if ($articleIds === [] && $categoryIds === []) {
+                            $allowed->whereRaw('1 = 0');
+                        }
+                    });
+                });
+        });
+    }
+
+    private function wherePublishedForEmployees(Builder $query): void
+    {
+        $query
+            ->where('is_published', true)
+            ->where(function (Builder $schedule): void {
+                $schedule
+                    ->whereNull('scheduled_publish_at')
+                    ->orWhere('scheduled_publish_at', '<=', now());
+            });
+    }
+
+    private function whereEmployeeAccessLevel(Builder $query): void
+    {
+        $query->where(function (Builder $access): void {
+            $access
+                ->whereNull('access_level')
+                ->orWhereIn('access_level', [
+                    KnowledgeArticle::ACCESS_INHERIT,
+                    KnowledgeArticle::ACCESS_EMPLOYEES,
+                ]);
+        });
+    }
+
+    /**
+     * @return array<int>
+     */
+    private function categoryPermissionIds(User $user): array
+    {
+        return $user->knowledgeCategoryPermissions()
+            ->where('can_view', true)
+            ->pluck('knowledge_category_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
+     * @return array<int>
+     */
+    private function articlePermissionIds(User $user): array
+    {
+        return $user->knowledgeArticlePermissions()
+            ->where('can_view', true)
+            ->pluck('knowledge_article_id')
+            ->map(fn ($id) => (int) $id)
             ->all();
     }
 

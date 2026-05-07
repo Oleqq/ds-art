@@ -8,13 +8,13 @@ use App\Models\KnowledgeArticle;
 use App\Models\KnowledgeCategory;
 use App\Models\User;
 use App\Support\Audit\AuditLogger;
-use App\Support\KnowledgeBase\KnowledgeAccess;
 use App\Support\KnowledgeBase\KnowledgeArticleStructureSync;
+use App\Support\KnowledgeBase\KnowledgeBaseCascadeDelete;
 use App\Support\KnowledgeBase\KnowledgeBasePresenter;
+use App\Support\PublicStorageAsset;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -26,17 +26,11 @@ class KnowledgeBaseArticleController extends Controller
         Request $request,
         KnowledgeArticle $article,
         KnowledgeBasePresenter $presenter,
-        KnowledgeAccess $access,
     ): Response {
         /** @var User $user */
         $user = $request->user();
 
-        abort_unless($article->category && $access->canViewCategory($user, $article->category), 404);
-
-        if ((int) $article->created_by !== (int) $user->id) {
-            abort_unless($access->isVisibleForEmployees($article), 404);
-        }
-
+        abort_unless($article->category, 404);
         $this->authorize('view', $article);
 
         return Inertia::render('employee/knowledge-base/article', $presenter->buildArticle($user, $article));
@@ -110,7 +104,7 @@ class KnowledgeBaseArticleController extends Controller
         $path = $file->store("knowledge-base/articles/{$article->id}/assets/{$kind}", 'public');
 
         return response()->json([
-            'url' => Storage::url($path),
+            'url' => PublicStorageAsset::url($path),
             'name' => $file->getClientOriginalName(),
             'size_label' => $this->formatFileSize($file->getSize()),
             'mime' => $file->getMimeType(),
@@ -121,6 +115,7 @@ class KnowledgeBaseArticleController extends Controller
         Request $request,
         KnowledgeArticle $article,
         AuditLogger $auditLogger,
+        KnowledgeBaseCascadeDelete $cascadeDelete,
     ): RedirectResponse {
         $this->authorize('delete', $article);
 
@@ -134,9 +129,7 @@ class KnowledgeBaseArticleController extends Controller
             'access_level',
         ]);
 
-        $this->deleteStoredFile($article->icon_image_url);
-        $this->deleteStoredFile($article->cover_url);
-        $article->delete();
+        $cascadeDelete->deleteArticle($article);
 
         $auditLogger->record(
             request: $request,
@@ -166,7 +159,10 @@ class KnowledgeBaseArticleController extends Controller
             $this->deleteStoredFile($article->cover_url);
 
             $article->update([
-                'cover_url' => Storage::url($path),
+                'cover_url' => PublicStorageAsset::url(
+                    $path,
+                    $request->coverPresentationData(),
+                ),
                 'updated_by' => $userId,
             ]);
 
@@ -180,7 +176,22 @@ class KnowledgeBaseArticleController extends Controller
                 'cover_url' => null,
                 'updated_by' => $userId,
             ]);
+
+            return;
         }
+
+        if ($article->cover_url) {
+            $article->update([
+                'cover_url' => PublicStorageAsset::appendQuery(
+                    PublicStorageAsset::pathOnly($article->cover_url),
+                    $request->coverPresentationData(),
+                ),
+                'updated_by' => $userId,
+            ]);
+
+            return;
+        }
+
     }
 
     private function syncIcon(
@@ -197,7 +208,7 @@ class KnowledgeBaseArticleController extends Controller
             $this->deleteStoredFile($article->icon_image_url);
 
             $article->update([
-                'icon_image_url' => Storage::url($path),
+                'icon_image_url' => PublicStorageAsset::url($path),
                 'updated_by' => $userId,
             ]);
 
@@ -216,12 +227,7 @@ class KnowledgeBaseArticleController extends Controller
 
     private function deleteStoredFile(?string $url): void
     {
-        if (! $url || ! str_starts_with($url, '/storage/')) {
-            return;
-        }
-
-        $path = ltrim(str_replace('/storage/', '', $url), '/');
-        Storage::disk('public')->delete($path);
+        PublicStorageAsset::delete($url);
     }
 
     private function makeUniqueSlug(string $title, ?KnowledgeArticle $ignore = null): string

@@ -1,19 +1,29 @@
 import { Head } from '@inertiajs/react';
-import { AlertCircle, Lock } from 'lucide-react';
+import { AlertCircle, Lock, PencilLine } from 'lucide-react';
+import { useState } from 'react';
 import { EmployeeDetailView } from '@/features/employees/components/employee-detail-view';
+import { EmployeeFormModal } from '@/features/employees/components/employee-form-modal';
+import { Button } from '@/components/ui/button';
+import type { EmployeeFormPayload } from '@/features/employees/types';
 import type { EmployeeRecord } from '@/features/employees/types';
 
 type EmployeeProfileProps = {
     employee: EmployeeRecord;
+    employee_form: EmployeeFormPayload;
+    positions: string[];
     banner: string;
     is_active_employee: boolean;
 };
 
 export default function EmployeeProfile({
     employee,
+    employee_form,
+    positions,
     banner,
     is_active_employee,
 }: EmployeeProfileProps) {
+    const [isEditOpen, setIsEditOpen] = useState(false);
+
     return (
         <>
             <Head title="Мой профиль" />
@@ -40,8 +50,40 @@ export default function EmployeeProfile({
                     </div>
                 )}
 
-                <EmployeeDetailView employee={employee} showManagerNotes={false} />
+                <EmployeeDetailView
+                    employee={employee}
+                    showManagerNotes={false}
+                    readonly={false}
+                    photoUploadUrl="/employee/profile/photo"
+                    fileUploadUrl="/employee/profile/files"
+                    fileDeleteUrl={(fileId) => `/employee/profile/files/${fileId}`}
+                    extraActions={
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="button-base--outline"
+                            onClick={() => setIsEditOpen(true)}
+                        >
+                            <PencilLine className="size-4" />
+                            Редактировать профиль
+                        </Button>
+                    }
+                />
             </div>
+
+            {isEditOpen ? (
+                <EmployeeFormModal
+                    title="Редактировать мой профиль"
+                    submitLabel="Сохранить изменения"
+                    positions={positions}
+                    employee={employee_form}
+                    submitUrl="/employee/profile"
+                    method="put"
+                    mode="self"
+                    onCancel={() => setIsEditOpen(false)}
+                    onSuccess={() => setIsEditOpen(false)}
+                />
+            ) : null}
         </>
     );
 }

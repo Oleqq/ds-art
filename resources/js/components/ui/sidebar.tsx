@@ -27,7 +27,7 @@ const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_WIDTH_COOKIE_NAME = "sidebar_width"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 const SIDEBAR_WIDTH = "16rem"
-const SIDEBAR_WIDTH_MOBILE = "18rem"
+const SIDEBAR_WIDTH_MOBILE = "100vw"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_WIDTH_DESKTOP = 240
 const SIDEBAR_WIDTH_MIN = 240
@@ -125,9 +125,18 @@ function SidebarProvider({
   // Adds a keyboard shortcut to toggle the sidebar.
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const isTypingTarget =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target?.isContentEditable ||
+        target?.closest("[contenteditable='true']")
+
       if (
         event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
-        (event.metaKey || event.ctrlKey)
+        (event.metaKey || event.ctrlKey) &&
+        !isTypingTarget
       ) {
         event.preventDefault()
         toggleSidebar()
@@ -194,6 +203,13 @@ function Sidebar({
   collapsible?: "offcanvas" | "icon" | "none"
 }) {
   const { isMobile, state, openMobile, setOpenMobile, sidebarWidth, setSidebarWidth } = useSidebar()
+  const mobileOpenedAtRef = React.useRef(0)
+
+  React.useEffect(() => {
+    if (openMobile) {
+      mobileOpenedAtRef.current = Date.now()
+    }
+  }, [openMobile])
 
   const startResize = React.useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
     if (state === "collapsed") {
@@ -256,7 +272,20 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="bg-sidebar text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:hidden"
+          className="bg-sidebar text-sidebar-foreground w-screen max-w-none p-0"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault()
+          }}
+          onPointerDownOutside={(event) => {
+            if (Date.now() - mobileOpenedAtRef.current < 220) {
+              event.preventDefault()
+            }
+          }}
+          onInteractOutside={(event) => {
+            if (Date.now() - mobileOpenedAtRef.current < 220) {
+              event.preventDefault()
+            }
+          }}
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -287,7 +316,7 @@ function Sidebar({
           "group-data-[collapsible=offcanvas]:w-0",
           "group-data-[side=right]:rotate-180",
           variant === "floating" || variant === "inset"
-            ? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]"
+            ? "group-data-[collapsible=icon]:w-(--sidebar-width-icon)"
             : "group-data-[collapsible=icon]:w-(--sidebar-width-icon)"
         )}
       />
@@ -300,7 +329,7 @@ function Sidebar({
             : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width-current)*-1)]",
           // Adjust the padding for floating and inset variants.
           variant === "floating" || variant === "inset"
-            ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
+            ? "p-2 group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[collapsible=icon]:p-0"
             : "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
           className
         )}
@@ -315,7 +344,8 @@ function Sidebar({
         <button
           type="button"
           data-sidebar="resize-handle"
-          aria-label="Resize sidebar"
+          aria-label="Изменить ширину меню"
+          title="Потяните, чтобы изменить ширину меню. Двойной клик сбрасывает ширину."
           tabIndex={-1}
           onDoubleClick={() => setSidebarWidth(SIDEBAR_WIDTH_DESKTOP)}
           onPointerDown={startResize}

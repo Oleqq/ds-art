@@ -5,6 +5,7 @@ namespace App\Support\KnowledgeBase;
 use App\Models\KnowledgeArticle;
 use App\Models\KnowledgeArticleAsset;
 use App\Models\KnowledgeArticleBlock;
+use App\Support\PublicStorageAsset;
 use Illuminate\Support\Str;
 
 class KnowledgeArticleStructureSync
@@ -145,11 +146,7 @@ class KnowledgeArticleStructureSync
 
     private function storagePathFromUrl(string $url): ?string
     {
-        if (! str_starts_with($url, '/storage/')) {
-            return null;
-        }
-
-        return ltrim(Str::after($url, '/storage/'), '/');
+        return PublicStorageAsset::pathFromUrl($url);
     }
 
     private function assetName(array $block): ?string

@@ -71,7 +71,8 @@ class EmployeePagesTest extends TestCase
             ->get(route('employee.profile.show'))
             ->assertOk()
             ->assertSee('"component":"employee\/profile"', false)
-            ->assertSee(json_encode('Режим просмотра — редактирование доступно только руководителю'), false)
+            ->assertSee(json_encode('Вы управляете своим профилем, контактами, фото и личными файлами.'), false)
+            ->assertSee('"employee_form":', false)
             ->assertSee('"manager_notes":null', false)
             ->assertDontSee(json_encode('Скрытая заметка руководителя.'), false);
     }

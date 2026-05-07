@@ -3,13 +3,15 @@ import {
     BookOpen,
     BriefcaseBusiness,
     LockKeyhole,
-    Menu,
+    PanelLeft,
     Search,
+    Settings2,
     UserRound,
 } from 'lucide-react';
-import { useMemo } from 'react';
-import { useCurrentUrl } from '@/hooks/use-current-url';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSidebar } from '@/components/ui/sidebar';
+import { useCurrentUrl } from '@/hooks/use-current-url';
+import { edit as editProfile } from '@/routes/profile';
 import type { Auth, BreadcrumbItem } from '@/types';
 
 function resolveTitle(
@@ -35,14 +37,16 @@ function resolveTitle(
         }
 
         if (currentUrl.startsWith('/admin/employees')) {
-            return currentUrl === '/admin/employees' ? 'Команда' : 'Сотрудник';
+            return currentUrl === '/admin/employees'
+                ? 'Команда'
+                : 'Сотрудник';
         }
 
         if (currentUrl.startsWith('/settings')) {
             return 'Настройки';
         }
 
-        return 'Staff Cabinet';
+        return 'DS Art';
     }
 
     if (currentUrl.startsWith('/employee/knowledge-base/search')) {
@@ -61,7 +65,7 @@ function resolveTitle(
         return 'Настройки';
     }
 
-    return 'Staff Cabinet';
+    return 'DS Art';
 }
 
 export function AppMobileShell({
@@ -71,7 +75,9 @@ export function AppMobileShell({
 }) {
     const { auth } = usePage<{ auth: Auth }>().props;
     const { currentUrl, isCurrentOrParentUrl, isCurrentUrl } = useCurrentUrl();
-    const { toggleSidebar, setOpenMobile } = useSidebar();
+    const { openMobile, setOpenMobile } = useSidebar();
+    const [isChromeHidden, setIsChromeHidden] = useState(false);
+    const lastScrollYRef = useRef(0);
 
     const title = useMemo(
         () => resolveTitle(currentUrl, auth.user.role, breadcrumbs),
@@ -83,38 +89,99 @@ export function AppMobileShell({
         ? '/admin/knowledge-base/search'
         : '/employee/knowledge-base/search';
 
+    useEffect(() => {
+        if (openMobile) {
+            setIsChromeHidden(false);
+            return;
+        }
+
+        const handleScroll = () => {
+            const nextY = Math.max(
+                window.scrollY,
+                document.documentElement.scrollTop,
+                0,
+            );
+            const delta = nextY - lastScrollYRef.current;
+
+            if (nextY <= 24) {
+                setIsChromeHidden(false);
+            } else if (delta > 10) {
+                setIsChromeHidden(true);
+            } else if (delta < -6) {
+                setIsChromeHidden(false);
+            }
+
+            lastScrollYRef.current = nextY;
+        };
+
+        lastScrollYRef.current = Math.max(
+            window.scrollY,
+            document.documentElement.scrollTop,
+            0,
+        );
+
+        window.addEventListener('scroll', handleScroll, { passive: true });
+
+        return () => {
+            window.removeEventListener('scroll', handleScroll);
+        };
+    }, [openMobile]);
+
+    const handleOpenSidebar = (
+        event: React.PointerEvent<HTMLButtonElement>,
+    ) => {
+        event.preventDefault();
+        event.stopPropagation();
+        window.setTimeout(() => {
+            setOpenMobile(true);
+        }, 0);
+    };
+
     return (
         <>
-            <header className="mobile-shell__header md:hidden">
+            <header
+                className={`mobile-shell__header md:hidden ${
+                    openMobile ? 'is-hidden-while-sidebar-open' : ''
+                } ${isChromeHidden ? 'is-scroll-hidden' : ''}`}
+            >
                 <button
                     type="button"
-                    onClick={toggleSidebar}
-                    className="mobile-shell__header-btn"
+                    className="mobile-shell__header-btn mobile-shell__header-btn--menu"
                     aria-label="Открыть меню"
+                    onPointerDown={handleOpenSidebar}
+                    onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                    }}
                 >
-                    <Menu className="size-5" />
+                    <PanelLeft className="size-5" />
                 </button>
 
                 <div className="mobile-shell__header-title">{title}</div>
 
-                <Link
-                    href={searchHref}
-                    prefetch
-                    className="mobile-shell__header-btn"
-                    aria-label="Открыть поиск"
-                    onClick={() => setOpenMobile(false)}
-                >
-                    <Search className="size-5" />
-                </Link>
+                <div className="mobile-shell__header-actions">
+                    <Link
+                        href={searchHref}
+                        className="mobile-shell__header-btn mobile-shell__header-btn--search"
+                        aria-label="Открыть поиск"
+                        onClick={() => setOpenMobile(false)}
+                    >
+                        <Search className="size-5" />
+                    </Link>
+                </div>
             </header>
 
-            <nav className="mobile-shell__nav md:hidden" aria-label="Мобильная навигация">
+            <nav
+                className={`mobile-shell__nav md:hidden ${
+                    openMobile ? 'is-hidden-while-sidebar-open' : ''
+                } ${isChromeHidden ? 'is-scroll-hidden' : ''}`}
+                aria-label="Мобильная навигация"
+            >
                 <div className="mobile-shell__nav-items">
                     {isAdmin ? (
                         <>
                             <Link
                                 href="/admin/employees"
-                                prefetch
                                 className={`mobile-shell__nav-item ${
                                     isCurrentOrParentUrl('/admin/employees')
                                         ? 'is-active'
@@ -123,27 +190,13 @@ export function AppMobileShell({
                                 onClick={() => setOpenMobile(false)}
                             >
                                 <BriefcaseBusiness className="mobile-shell__nav-icon" />
-                                <span className="mobile-shell__nav-label">Команда</span>
-                            </Link>
-
-                            <Link
-                                href="/admin/knowledge-base"
-                                prefetch
-                                className={`mobile-shell__nav-item ${
-                                    isCurrentOrParentUrl('/admin/knowledge-base') &&
-                                    !isCurrentOrParentUrl('/admin/knowledge-base/search')
-                                        ? 'is-active'
-                                        : ''
-                                }`}
-                                onClick={() => setOpenMobile(false)}
-                            >
-                                <BookOpen className="mobile-shell__nav-icon" />
-                                <span className="mobile-shell__nav-label">База</span>
+                                <span className="mobile-shell__nav-label">
+                                    Команда
+                                </span>
                             </Link>
 
                             <Link
                                 href="/admin/access"
-                                prefetch
                                 className={`mobile-shell__nav-item ${
                                     isCurrentOrParentUrl('/admin/access')
                                         ? 'is-active'
@@ -152,81 +205,127 @@ export function AppMobileShell({
                                 onClick={() => setOpenMobile(false)}
                             >
                                 <LockKeyhole className="mobile-shell__nav-icon" />
-                                <span className="mobile-shell__nav-label">Доступ</span>
+                                <span className="mobile-shell__nav-label">
+                                    Доступ
+                                </span>
                             </Link>
 
                             <Link
-                                href={searchHref}
-                                prefetch
+                                href="/admin/knowledge-base"
                                 className={`mobile-shell__nav-item ${
-                                    isCurrentOrParentUrl(searchHref) ? 'is-active' : ''
-                                }`}
-                                onClick={() => setOpenMobile(false)}
-                            >
-                                <Search className="mobile-shell__nav-icon" />
-                                <span className="mobile-shell__nav-label">Поиск</span>
-                            </Link>
-
-                            <button
-                                type="button"
-                                onClick={toggleSidebar}
-                                className="mobile-shell__nav-item"
-                                aria-label="Открыть меню"
-                            >
-                                <Menu className="mobile-shell__nav-icon" />
-                                <span className="mobile-shell__nav-label">Меню</span>
-                            </button>
-                        </>
-                    ) : (
-                        <>
-                            <Link
-                                href="/employee/profile"
-                                prefetch
-                                className={`mobile-shell__nav-item ${
-                                    isCurrentUrl('/employee/profile') ? 'is-active' : ''
-                                }`}
-                                onClick={() => setOpenMobile(false)}
-                            >
-                                <UserRound className="mobile-shell__nav-icon" />
-                                <span className="mobile-shell__nav-label">Профиль</span>
-                            </Link>
-
-                            <Link
-                                href="/employee/knowledge-base"
-                                prefetch
-                                className={`mobile-shell__nav-item ${
-                                    isCurrentOrParentUrl('/employee/knowledge-base') &&
-                                    !isCurrentOrParentUrl('/employee/knowledge-base/search')
+                                    isCurrentOrParentUrl(
+                                        '/admin/knowledge-base',
+                                    ) &&
+                                    !isCurrentOrParentUrl(
+                                        '/admin/knowledge-base/search',
+                                    )
                                         ? 'is-active'
                                         : ''
                                 }`}
                                 onClick={() => setOpenMobile(false)}
                             >
                                 <BookOpen className="mobile-shell__nav-icon" />
-                                <span className="mobile-shell__nav-label">База</span>
+                                <span className="mobile-shell__nav-label">
+                                    База
+                                </span>
                             </Link>
 
                             <Link
                                 href={searchHref}
-                                prefetch
                                 className={`mobile-shell__nav-item ${
-                                    isCurrentOrParentUrl(searchHref) ? 'is-active' : ''
+                                    isCurrentOrParentUrl(searchHref)
+                                        ? 'is-active'
+                                        : ''
                                 }`}
                                 onClick={() => setOpenMobile(false)}
                             >
                                 <Search className="mobile-shell__nav-icon" />
-                                <span className="mobile-shell__nav-label">Поиск</span>
+                                <span className="mobile-shell__nav-label">
+                                    Поиск
+                                </span>
                             </Link>
 
-                            <button
-                                type="button"
-                                onClick={toggleSidebar}
-                                className="mobile-shell__nav-item"
-                                aria-label="Открыть меню"
+                            <Link
+                                href={editProfile()}
+                                className={`mobile-shell__nav-item ${
+                                    isCurrentOrParentUrl('/settings')
+                                        ? 'is-active'
+                                        : ''
+                                }`}
+                                onClick={() => setOpenMobile(false)}
                             >
-                                <Menu className="mobile-shell__nav-icon" />
-                                <span className="mobile-shell__nav-label">Меню</span>
-                            </button>
+                                <Settings2 className="mobile-shell__nav-icon" />
+                                <span className="mobile-shell__nav-label">
+                                    Профиль
+                                </span>
+                            </Link>
+                        </>
+                    ) : (
+                        <>
+                            <Link
+                                href="/employee/profile"
+                                className={`mobile-shell__nav-item ${
+                                    isCurrentUrl('/employee/profile')
+                                        ? 'is-active'
+                                        : ''
+                                }`}
+                                onClick={() => setOpenMobile(false)}
+                            >
+                                <UserRound className="mobile-shell__nav-icon" />
+                                <span className="mobile-shell__nav-label">
+                                    Профиль
+                                </span>
+                            </Link>
+
+                            <Link
+                                href="/employee/knowledge-base"
+                                className={`mobile-shell__nav-item ${
+                                    isCurrentOrParentUrl(
+                                        '/employee/knowledge-base',
+                                    ) &&
+                                    !isCurrentOrParentUrl(
+                                        '/employee/knowledge-base/search',
+                                    )
+                                        ? 'is-active'
+                                        : ''
+                                }`}
+                                onClick={() => setOpenMobile(false)}
+                            >
+                                <BookOpen className="mobile-shell__nav-icon" />
+                                <span className="mobile-shell__nav-label">
+                                    База
+                                </span>
+                            </Link>
+
+                            <Link
+                                href={searchHref}
+                                className={`mobile-shell__nav-item ${
+                                    isCurrentOrParentUrl(searchHref)
+                                        ? 'is-active'
+                                        : ''
+                                }`}
+                                onClick={() => setOpenMobile(false)}
+                            >
+                                <Search className="mobile-shell__nav-icon" />
+                                <span className="mobile-shell__nav-label">
+                                    Поиск
+                                </span>
+                            </Link>
+
+                            <Link
+                                href={editProfile()}
+                                className={`mobile-shell__nav-item ${
+                                    isCurrentOrParentUrl('/settings')
+                                        ? 'is-active'
+                                        : ''
+                                }`}
+                                onClick={() => setOpenMobile(false)}
+                            >
+                                <Settings2 className="mobile-shell__nav-icon" />
+                                <span className="mobile-shell__nav-label">
+                                    Настройки
+                                </span>
+                            </Link>
                         </>
                     )}
                 </div>

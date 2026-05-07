@@ -2,7 +2,10 @@ import { Link, router } from '@inertiajs/react';
 import { FileText, FolderOpen, Search } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { KnowledgeBaseIcon } from '@/features/knowledge-base/components/knowledge-base-icon';
-import type { KnowledgeBaseSearchItem, KnowledgeBaseSearchResults } from '@/features/knowledge-base/types';
+import type {
+    KnowledgeBaseSearchItem,
+    KnowledgeBaseSearchResults,
+} from '@/features/knowledge-base/types';
 
 function SearchItemCard({ item }: { item: KnowledgeBaseSearchItem }) {
     const isCategory = item.type === 'category';
@@ -26,16 +29,26 @@ function SearchItemCard({ item }: { item: KnowledgeBaseSearchItem }) {
 
             <div className="kb-search-result__body">
                 <div className="kb-search-result__topline">
-                    <span className="kb-search-result__type">{isCategory ? 'Раздел' : 'Статья'}</span>
+                    <span className="kb-search-result__type">
+                        {isCategory ? 'Раздел' : 'Статья'}
+                    </span>
                     <span className="kb-search-result__meta">{item.meta}</span>
                     {item.scheduled_publish_at ? (
-                        <span className="kb-search-result__draft">Запланировано</span>
+                        <span className="kb-search-result__draft">
+                            Запланировано
+                        </span>
                     ) : item.is_published === false ? (
-                        <span className="kb-search-result__draft">Черновик</span>
+                        <span className="kb-search-result__draft">
+                            Черновик
+                        </span>
                     ) : null}
                 </div>
                 <div className="kb-search-result__title">{item.title}</div>
-                {item.excerpt ? <div className="kb-search-result__excerpt">{item.excerpt}</div> : null}
+                {item.excerpt ? (
+                    <div className="kb-search-result__excerpt">
+                        {item.excerpt}
+                    </div>
+                ) : null}
             </div>
         </Link>
     );
@@ -51,7 +64,10 @@ export function KnowledgeBaseSearchResultsView({
     mode: 'admin' | 'employee';
 }) {
     const [value, setValue] = useState(query);
-    const searchHref = mode === 'admin' ? '/admin/knowledge-base/search' : '/employee/knowledge-base/search';
+    const searchHref =
+        mode === 'admin'
+            ? '/admin/knowledge-base/search'
+            : '/employee/knowledge-base/search';
 
     const submit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -59,7 +75,11 @@ export function KnowledgeBaseSearchResultsView({
         const nextQuery = value.trim();
 
         if (nextQuery === '') {
-            router.visit(mode === 'admin' ? '/admin/knowledge-base' : '/employee/knowledge-base');
+            router.visit(
+                mode === 'admin'
+                    ? '/admin/knowledge-base'
+                    : '/employee/knowledge-base',
+            );
             return;
         }
 
@@ -72,22 +92,37 @@ export function KnowledgeBaseSearchResultsView({
                 <div>
                     <h1 className="page-layout__title">Поиск по базе знаний</h1>
                     <p className="page-layout__subtitle">
-                        Ищем по разделам, статьям, нормализованным блокам статьи и вложенным файлам.
+                        Ищем по разделам, статьям, нормализованным блокам статьи
+                        и вложенным файлам.
                     </p>
                 </div>
             </div>
 
             <form className="kb-search-box" onSubmit={submit}>
                 <Search className="kb-search-box__icon size-4" />
-                <input
-                    type="search"
-                    value={value}
-                    onChange={(event) => setValue(event.target.value)}
-                    placeholder="Введите название статьи, раздела, файл или фразу из текста..."
-                    className="kb-search-box__input"
-                    autoFocus
-                />
-                <button type="submit" className="kb-atb-btn kb-atb-btn--primary">
+                <div className="kb-search-box__field">
+                    {value.trim() === '' ? (
+                        <span
+                            className="kb-search-box__mobile-placeholder"
+                            aria-hidden="true"
+                        >
+                            Р’РІРµРґРёС‚Рµ РЅР°Р·РІР°РЅРёРµ СЃС‚Р°С‚СЊРё,
+                            СЂР°Р·РґРµР»Р°, С„Р°Р№Р» РёР»Рё С„СЂР°Р·Сѓ РёР·
+                            С‚РµРєСЃС‚Р°
+                        </span>
+                    ) : null}
+                    <input
+                        type="search"
+                        value={value}
+                        onChange={(event) => setValue(event.target.value)}
+                        placeholder="Введите название статьи, раздела, файл или фразу из текста..."
+                        className="kb-search-box__input"
+                    />
+                </div>
+                <button
+                    type="submit"
+                    className="kb-atb-btn kb-atb-btn--primary"
+                >
                     Найти
                 </button>
             </form>
@@ -95,7 +130,8 @@ export function KnowledgeBaseSearchResultsView({
             <div className="kb-search-page__summary">
                 {query ? (
                     <>
-                        По запросу <span>«{query}»</span> найдено: {results.total}
+                        По запросу <span>«{query}»</span> найдено:{' '}
+                        {results.total}
                     </>
                 ) : (
                     'Введите запрос, чтобы найти материалы в базе знаний.'
@@ -106,10 +142,15 @@ export function KnowledgeBaseSearchResultsView({
                 <div className="kb-search-results">
                     {results.categories.length > 0 ? (
                         <section className="kb-search-section">
-                            <h2 className="kb-search-section__title">Разделы</h2>
+                            <h2 className="kb-search-section__title">
+                                Разделы
+                            </h2>
                             <div className="kb-search-section__list">
                                 {results.categories.map((item) => (
-                                    <SearchItemCard key={`category-${item.id}`} item={item} />
+                                    <SearchItemCard
+                                        key={`category-${item.id}`}
+                                        item={item}
+                                    />
                                 ))}
                             </div>
                         </section>
@@ -117,10 +158,15 @@ export function KnowledgeBaseSearchResultsView({
 
                     {results.articles.length > 0 ? (
                         <section className="kb-search-section">
-                            <h2 className="kb-search-section__title">Статьи и материалы</h2>
+                            <h2 className="kb-search-section__title">
+                                Статьи и материалы
+                            </h2>
                             <div className="kb-search-section__list">
                                 {results.articles.map((item) => (
-                                    <SearchItemCard key={`article-${item.id}`} item={item} />
+                                    <SearchItemCard
+                                        key={`article-${item.id}`}
+                                        item={item}
+                                    />
                                 ))}
                             </div>
                         </section>
@@ -128,9 +174,12 @@ export function KnowledgeBaseSearchResultsView({
                 </div>
             ) : query ? (
                 <div className="kb-search-empty">
-                    <div className="kb-search-empty__title">Ничего не нашли</div>
+                    <div className="kb-search-empty__title">
+                        Ничего не нашли
+                    </div>
                     <div className="kb-search-empty__text">
-                        Попробуйте другое слово или проверьте, что материал опубликован и доступен вашей роли.
+                        Попробуйте другое слово или проверьте, что материал
+                        опубликован и доступен вашей роли.
                     </div>
                 </div>
             ) : null}

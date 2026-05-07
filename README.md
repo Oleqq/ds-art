@@ -1,42 +1,132 @@
 # DS Art Staff Cabinet
 
-Внутренний кабинет агентства для сотрудников, прав доступа и базы знаний. Проект собран как Laravel/Inertia/React приложение с темной и светлой темой, редактором материалов и управлением доступами по ролям.
+Внутреннее приложение агентства DS Art для сотрудников, базы знаний, управления доступами и ручного production-deploy через companion-пакет.
+
+## Что это за проект
+
+Проект вырос из HTML-прототипа `docs/prototype/staff-cabinet (10).html` и доведен до рабочего Laravel-приложения на Inertia + React. Сейчас это уже не демо-макет, а почти релизный staff cabinet с двумя основными ролями:
+
+- `admin` управляет сотрудниками, правами, структурой базы знаний и публикацией материалов;
+- `employee` работает со своим профилем, видит только разрешенные разделы и может создавать или редактировать статьи в рамках выданных прав.
 
 ## Стек
 
-- Laravel 13, PHP 8.3+
-- MySQL для production, SQLite для тестов
-- Inertia.js, React 19, TypeScript
-- Vite 8, Tailwind CSS 4
-- Laravel Fortify для авторизации
+- PHP `8.3+`
+- Laravel `13`
+- Laravel Fortify
+- MySQL
+- Inertia.js + React `19` + TypeScript
+- Vite `8`
+- Tailwind CSS `4`
+- PHPUnit `12`
+- Laravel Pint + ESLint + Prettier
 
-## Что готово
+## Как устроен проект
 
-- Авторизация администратора и сотрудника.
-- Экран сотрудников, карточка сотрудника и настройки профиля.
-- Экран прав доступа с правами действий и доступом к разделам базы знаний.
-- База знаний: разделы, подразделы, статьи, поиск, быстрый поиск в сайдбаре.
-- Редактор статей с блоками, обложками, иконками, тегами, черновиками и сохранением статуса.
-- Управление контентом в базе знаний: выбор элементов, bulk-действия, перемещение и сортировка drag-and-drop.
-- Темная и светлая тема, приведенные к текущему UI/UX-киту проекта.
-- Документация по этапам, финальному аудиту и FTP-деплою.
+### Основной runtime flow
 
-## Что не закрыто перед production
+1. `routes/web.php` определяет web-маршруты для `admin`, `employee`, auth и служебных endpoints.
+2. `app/Http/Controllers/...` принимает запрос, использует Form Requests и Policies.
+3. `app/Support/...`, модели и Storage/Mail закрывают прикладную логику.
+4. Laravel передает данные в `Inertia::render(...)`.
+5. `resources/js/pages/...` и `resources/js/features/...` рендерят экран и отправляют изменения обратно через Inertia или JSON endpoints.
 
-- Первый production-деплой еще не выполнен и не проверен на реальном хостинге.
-- Production `.env`, подключение MySQL, права на `storage/` и `bootstrap/cache/` нужно настроить на сервере.
-- При FTP-only деплое база данных не обновляется сама: нужно отдельно импортировать SQL dump или выполнить миграции через SSH/панель хостинга.
-- Нужен финальный ручной QA-проход на домене после выката.
-- AI-агент из `phase-08` пока оставлен как следующая большая фича, не как blocker MVP.
+### Ключевые папки
 
-## Тестовые доступы
+- `app/Http/Controllers/Admin`
+  - сотрудники, права доступа, база знаний, административные действия;
+- `app/Http/Controllers/Employee`
+  - профиль сотрудника, employee-flow базы знаний, личные сценарии;
+- `app/Http/Controllers/Auth`
+  - активация сотрудника по email-коду и onboarding;
+- `app/Http/Requests`
+  - валидация входящих данных;
+- `app/Models`
+  - `User`, `Employee`, `KnowledgeCategory`, `KnowledgeArticle`, ACL-модели, asset-модели;
+- `app/Policies`
+  - backend-авторизация;
+- `app/Support/Employees`
+  - активация сотрудников, пароли, служебные employee-сценарии;
+- `app/Support/KnowledgeBase`
+  - доступ, поиск, представление, синхронизация структуры статьи, каскадные операции;
+- `app/Mail`
+  - письма активации сотрудника;
+- `resources/js/pages`
+  - Inertia-страницы по ролям и разделам;
+- `resources/js/features/employees`
+  - список сотрудников, карточки, профиль, файлы, формы;
+- `resources/js/features/knowledge-base`
+  - дерево БЗ, редактор статьи, поиск, экспорт, media-блоки;
+- `resources/views/mail`
+  - email-шаблоны;
+- `database/migrations`
+  - схема сотрудников, базы знаний, ACL, аудита, активации;
+- `database/seeders`
+  - стартовые данные локальной среды;
+- `docs`
+  - roadmap, implementation-доки, deploy-инструкции и прототип.
 
-Сидеры создают две учетные записи для локальной и тестовой проверки:
+## Основные продуктовые потоки
 
-- `admin@agency.ru` / `password` - администратор, Михаил Соколов
-- `anna@agency.ru` / `password` - сотрудник, Анна Волкова
+### Сотрудники
 
-Пароли тестовые. На реальном домене их нужно заменить перед передачей доступа команде.
+- список, карточка, создание, редактирование и удаление сотрудника;
+- фото профиля, файлы, график работы, заметки руководителя;
+- раздельные admin- и employee-представления данных.
+
+### Активация сотрудника
+
+1. Администратор создает сотрудника.
+2. Сотрудник открывает `/register`.
+3. На рабочую почту уходит код активации.
+4. Сотрудник задает свой пароль.
+5. Профиль активируется, после чего пользователь входит в приложение.
+
+### База знаний
+
+- древовидные разделы и вложенные категории;
+- статьи с блоками, файлами, изображениями, видео, обложками и иконками;
+- поиск по категориям, статьям, нормализованным блокам и asset-данным;
+- drag-and-drop, копирование ссылки, перемещение, дублирование;
+- единый shell для `admin` и `employee`, но с разными permission flags.
+
+### Доступ и безопасность
+
+- ACL на уровне сотрудника;
+- персональная видимость разделов и статей;
+- `access_level` статьи: `inherit`, `employees`, `admins`, `author`;
+- аудит критичных действий;
+- SMTP-конфигурация для production через `SMTP_*` с fallback на `MAIL_*`.
+
+## Репозитории и deploy
+
+- основной репозиторий приложения: `C:\dev\ds-art`
+- companion manual deploy-пакет: `C:\dev\ds-art-manual-deploy`
+  - `ds-art-app`
+  - `public_html`
+
+Локальная сборка делается в основном репозитории, после чего обновляется companion-пакет для ручного FTP-deploy.
+
+## Этапы разработки
+
+- `Phase 01`
+  - фундамент Laravel/Inertia/React проекта;
+- `Phase 02`
+  - auth, роли, layouts;
+- `Phase 03`
+  - сотрудники и профиль;
+- `Phase 04`
+  - структура базы знаний;
+- `Phase 05`
+  - статьи, редактор, asset-слой;
+- `Phase 06`
+  - права доступа, поиск, стабилизация пользовательских потоков;
+- `Phase 07`
+  - production-готовность, deploy и операционные инструкции;
+- `Phase 08`
+  - AI-агент, сознательно оставлен в post-release backlog.
+
+История этапов и подробные заметки по областям лежат в [docs/ROADMAP.md](docs/ROADMAP.md) и [docs/implementation](docs/implementation/README.md).
 
 ## Локальный запуск
 
@@ -55,32 +145,38 @@ npm run dev
 npm run build
 ```
 
+Для текущего Vite нужен Node `20.19+` или `22.12+`. На этой машине сборка уже проверялась через Herd Node `v25.9.0`.
+
 ## Проверки
 
 ```bash
-composer lint:check
+composer run lint:check
+npm run lint:check
+npm run format:check
 npm run types:check
-npm run build
 php artisan test
 ```
 
+Полный локальный прогон:
+
+```bash
+composer run ci:check
+```
+
+## Что не коммитим
+
+- `.env`, `.env.production`, `.env.local`, backup-env файлы;
+- `docs/private/*`;
+- локальная рабочая папка с заметками;
+- `.cache/`;
+- `public/build`, `public/hot`, `storage/app/public` и пользовательские файлы;
+- локальные дампы, временные артефакты, IDE-кэш и служебные логи.
+
 ## Документация
 
-- [Финальный аудит и деплой](docs/implementation/FINAL_AUDIT_AND_DEPLOY.md)
-- [GitHub-деплой](docs/implementation/GITHUB_DEPLOY.md)
-- [FTP-деплой](docs/implementation/DEPLOY_FTP.md)
-- [Статус реализации](docs/implementation/STATUS.md)
-- [Фазы реализации](docs/implementation/phases)
-- [Прототип](docs/prototype)
-
-## Безопасность
-
-Не коммитить реальные доступы и окружение:
-
-- `.env`
-- `.env.production`
-- `docs/private/*.local.md`
-- `storage/`
-- `public/storage`
-
-Локальные FTP/DB-доступы хранятся только в `docs/private/DEPLOY_ACCESS.local.md`; этот файл намеренно игнорируется git.
+- [Общая дорожная карта](docs/ROADMAP.md)
+- [Индекс implementation-доков](docs/implementation/README.md)
+- [Текущий статус проекта](docs/implementation/STATUS.md)
+- [SMTP и активация сотрудников](docs/SMTP_И_АКТИВАЦИЯ_СОТРУДНИКОВ.md)
+- [Deploy через FTP](docs/implementation/DEPLOY_FTP.md)
+- [Финальный аудит и deploy checklist](docs/implementation/FINAL_AUDIT_AND_DEPLOY.md)

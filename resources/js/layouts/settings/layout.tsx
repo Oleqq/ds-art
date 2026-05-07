@@ -46,7 +46,6 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                         <Link
                             key={`${toUrl(item.href)}-${index}`}
                             href={item.href}
-                            prefetch
                             className={cn('settings-page__nav-link', {
                                 'is-active': isCurrentOrParentUrl(item.href),
                             })}

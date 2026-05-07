@@ -3,13 +3,13 @@ import {
     ArrowRightLeft,
     Check,
     Copy,
+    FilePlus2,
     FolderPlus,
     ImagePlus,
     PencilLine,
     SmilePlus,
     Trash2,
     Upload,
-    X,
 } from 'lucide-react';
 import {
     type CSSProperties,
@@ -24,8 +24,11 @@ import {
 import { flushSync } from 'react-dom';
 import { ConfirmModal } from '@/components/confirm-modal';
 import { KnowledgeBaseArticleMoveModal } from '@/features/knowledge-base/components/knowledge-base-article-move-modal';
+import { KnowledgeBaseImageEditorControls } from '@/features/knowledge-base/components/knowledge-base-image-editor-controls';
+import { KnowledgeBaseImageFrame } from '@/features/knowledge-base/components/knowledge-base-image-frame';
 import { KnowledgeBaseIcon } from '@/features/knowledge-base/components/knowledge-base-icon';
 import { KnowledgeBaseIconPicker } from '@/features/knowledge-base/components/knowledge-base-icon-picker';
+import { KnowledgeBaseMetaTrigger } from '@/features/knowledge-base/components/knowledge-base-meta-trigger';
 import type {
     KnowledgeBaseArticleCard,
     KnowledgeBaseArticleMoveCategory,
@@ -48,6 +51,17 @@ type SortSession = DragItem & {
     lastReorderAt: number;
 };
 type SortPlacement = 'before' | 'after';
+type CoverPresentation = {
+    x: number;
+    y: number;
+    zoom: number;
+    height: number;
+};
+
+const DEFAULT_COVER_POSITION_X = 50;
+const DEFAULT_COVER_POSITION_Y = 50;
+const DEFAULT_COVER_ZOOM = 100;
+const DEFAULT_COVER_HEIGHT = 220;
 
 type SortableStyle = CSSProperties & {
     '--kb-wiggle-angle'?: string;
@@ -63,8 +77,52 @@ function formatMaterialsCount(count: number) {
     return `${count} материалов`;
 }
 
+function buildMetaRows(item: {
+    author_name: string | null;
+    updated_by_name: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+}) {
+    const rows: Array<{
+        label: string;
+        value: string;
+        tone: 'author' | 'created' | 'updated';
+    }> = [];
+
+    if (item.author_name) {
+        rows.push({
+            label: 'Автор',
+            value: item.author_name,
+            tone: 'author',
+        });
+    }
+
+    if (item.created_at) {
+        rows.push({
+            label: 'Создано',
+            value: item.created_at,
+            tone: 'created',
+        });
+    }
+
+    if (item.updated_at) {
+        rows.push({
+            label: item.updated_by_name ? 'Обновил' : 'Обновлено',
+            value: item.updated_by_name
+                ? `${item.updated_by_name} · ${item.updated_at}`
+                : item.updated_at,
+            tone: 'updated',
+        });
+    }
+
+    return rows;
+}
+
 function buildArticleBadges(article: KnowledgeBaseArticleCard) {
-    const badges: Array<{ label: string; tone: 'default' | 'draft' | 'scheduled' }> = [];
+    const badges: Array<{
+        label: string;
+        tone: 'default' | 'draft' | 'scheduled';
+    }> = [];
 
     if (article.scheduled_publish_at) {
         badges.push({ label: 'Запланировано', tone: 'scheduled' });
@@ -85,11 +143,18 @@ function buildArticleBadges(article: KnowledgeBaseArticleCard) {
 function isInteractiveElement(target: EventTarget | null) {
     return (
         target instanceof HTMLElement &&
-        Boolean(target.closest('a, button, input, textarea, select, [data-kb-no-card-select]'))
+        Boolean(
+            target.closest(
+                'a, button, input, textarea, select, [data-kb-no-card-select]',
+            ),
+        )
     );
 }
 
-function handleSelectableKeyDown(event: KeyboardEvent<HTMLElement>, onToggle: () => void) {
+function handleSelectableKeyDown(
+    event: KeyboardEvent<HTMLElement>,
+    onToggle: () => void,
+) {
     if (isInteractiveElement(event.target)) {
         return;
     }
@@ -98,6 +163,48 @@ function handleSelectableKeyDown(event: KeyboardEvent<HTMLElement>, onToggle: ()
         event.preventDefault();
         onToggle();
     }
+}
+
+function clampPercent(value: number, min: number, max: number) {
+    return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
+}
+
+function parseCoverPresentation(
+    url: string | null | undefined,
+): CoverPresentation {
+    if (!url) {
+        return {
+            x: DEFAULT_COVER_POSITION_X,
+            y: DEFAULT_COVER_POSITION_Y,
+            zoom: DEFAULT_COVER_ZOOM,
+            height: DEFAULT_COVER_HEIGHT,
+        };
+    }
+
+    const source = new URL(url, 'http://localhost');
+
+    return {
+        x: clampPercent(
+            Number(source.searchParams.get('vx') ?? DEFAULT_COVER_POSITION_X),
+            0,
+            100,
+        ),
+        y: clampPercent(
+            Number(source.searchParams.get('vy') ?? DEFAULT_COVER_POSITION_Y),
+            0,
+            100,
+        ),
+        zoom: clampPercent(
+            Number(source.searchParams.get('vz') ?? DEFAULT_COVER_ZOOM),
+            100,
+            200,
+        ),
+        height: clampPercent(
+            Number(source.searchParams.get('vh') ?? DEFAULT_COVER_HEIGHT),
+            160,
+            520,
+        ),
+    };
 }
 
 function reorderById<T extends { id: number }>(
@@ -115,8 +222,13 @@ function reorderById<T extends { id: number }>(
 
     const next = [...items];
     const [moved] = next.splice(fromIndex, 1);
-    const targetIndexAfterRemoval = next.findIndex((item) => item.id === targetId);
-    const insertIndex = placement === 'after' ? targetIndexAfterRemoval + 1 : targetIndexAfterRemoval;
+    const targetIndexAfterRemoval = next.findIndex(
+        (item) => item.id === targetId,
+    );
+    const insertIndex =
+        placement === 'after'
+            ? targetIndexAfterRemoval + 1
+            : targetIndexAfterRemoval;
     next.splice(insertIndex, 0, moved);
 
     return next;
@@ -165,7 +277,9 @@ function selectedMovePhrase(categoryCount: number, articleCount: number) {
         return articleCount === 1 ? 'выбранную статью' : 'выбранные статьи';
     }
 
-    return categoryCount + articleCount === 1 ? 'выбранный элемент' : 'выбранные элементы';
+    return categoryCount + articleCount === 1
+        ? 'выбранный элемент'
+        : 'выбранные элементы';
 }
 
 function Breadcrumbs({
@@ -179,7 +293,10 @@ function Breadcrumbs({
         <div className="kb-category__breadcrumb">
             {breadcrumbs.map((item) => (
                 <span key={item.id} className="contents">
-                    <Link href={item.href} className="kb-category__breadcrumb-link">
+                    <Link
+                        href={item.href}
+                        className="kb-category__breadcrumb-link"
+                    >
                         {item.icon_image_url ? (
                             <img
                                 src={item.icon_image_url}
@@ -196,7 +313,9 @@ function Breadcrumbs({
             ))}
 
             {currentLabel ? (
-                <span className="kb-category__breadcrumb-current">{currentLabel}</span>
+                <span className="kb-category__breadcrumb-current">
+                    {currentLabel}
+                </span>
             ) : null}
         </div>
     );
@@ -264,9 +383,19 @@ function CategoryTileCard({
         setIsRenaming(false);
     };
 
+    const isEmpty = item.materials_count === 0;
+    const metaRows = buildMetaRows(item);
+
     if (!editMode) {
         return (
-            <Link href={item.href} className="kb-card kb-card--category" title={item.name}>
+            <Link
+                href={item.href}
+                className={cn(
+                    'kb-card kb-card--category',
+                    isEmpty && 'kb-card--empty',
+                )}
+                title={item.name}
+            >
                 <KnowledgeBaseIcon
                     icon={item.icon}
                     imageUrl={item.icon_image_url}
@@ -277,7 +406,12 @@ function CategoryTileCard({
                 <div className="kb-card__title" title={item.name}>
                     {item.name}
                 </div>
-                <div className="kb-card__meta">{formatMaterialsCount(item.materials_count)}</div>
+                <div className="kb-card__meta-row">
+                    <div className="kb-card__meta">
+                        {formatMaterialsCount(item.materials_count)}
+                    </div>
+                    <KnowledgeBaseMetaTrigger rows={metaRows} />
+                </div>
             </Link>
         );
     }
@@ -296,6 +430,7 @@ function CategoryTileCard({
                 'kb-card kb-card--category kb-card--edit-mode',
                 selected && 'is-selected',
                 dragging && 'is-dragging',
+                isEmpty && 'kb-card--empty',
             )}
             style={style}
             data-kb-sort-kind="category"
@@ -303,7 +438,9 @@ function CategoryTileCard({
             role="button"
             tabIndex={0}
             onClick={handleCardClick}
-            onKeyDown={(event) => handleSelectableKeyDown(event, onToggleSelect)}
+            onKeyDown={(event) =>
+                handleSelectableKeyDown(event, onToggleSelect)
+            }
             onPointerDown={onPointerDown}
         >
             <button
@@ -410,10 +547,10 @@ function CategoryTileCard({
                     className="kb-card__title-input"
                 />
             ) : (
-            <button
-                type="button"
-                className="kb-card__title-button"
-                title={item.name}
+                <button
+                    type="button"
+                    className="kb-card__title-button"
+                    title={item.name}
                     data-kb-editable-text
                     onClick={(event) => {
                         event.stopPropagation();
@@ -424,7 +561,12 @@ function CategoryTileCard({
                 </button>
             )}
 
-            <div className="kb-card__meta">{formatMaterialsCount(item.materials_count)}</div>
+            <div className="kb-card__meta-row">
+                <div className="kb-card__meta">
+                    {formatMaterialsCount(item.materials_count)}
+                </div>
+                <KnowledgeBaseMetaTrigger rows={metaRows} />
+            </div>
 
             <KnowledgeBaseIconPicker
                 open={isIconPickerOpen}
@@ -481,11 +623,14 @@ function ArticleTileCard({
     onPointerDown?: (event: PointerEvent<HTMLElement>) => void;
 }) {
     const { visibleBadges, hiddenCount } = buildArticleBadges(item);
-    const [editingField, setEditingField] = useState<'title' | 'summary' | null>(null);
+    const [editingField, setEditingField] = useState<
+        'title' | 'summary' | null
+    >(null);
     const [titleDraft, setTitleDraft] = useState(item.title);
     const [summaryDraft, setSummaryDraft] = useState(item.summary ?? '');
     const titleInputRef = useRef<HTMLInputElement | null>(null);
     const summaryInputRef = useRef<HTMLTextAreaElement | null>(null);
+    const metaRows = buildMetaRows(item);
 
     useEffect(() => {
         setTitleDraft(item.title);
@@ -516,11 +661,16 @@ function ArticleTileCard({
         }
 
         if (nextTitle !== item.title || nextSummary !== (item.summary ?? '')) {
-            void Promise.resolve(onUpdate?.(item, { title: nextTitle, summary: nextSummary }));
+            void Promise.resolve(
+                onUpdate?.(item, { title: nextTitle, summary: nextSummary }),
+            );
         }
 
         setEditingField(null);
     };
+
+    const isEmptyCard =
+        !item.summary && visibleBadges.length === 0 && hiddenCount === 0;
 
     const body = (
         <>
@@ -577,12 +727,17 @@ function ArticleTileCard({
                     <textarea
                         ref={summaryInputRef}
                         value={summaryDraft}
-                        onChange={(event) => setSummaryDraft(event.target.value)}
+                        onChange={(event) =>
+                            setSummaryDraft(event.target.value)
+                        }
                         onClick={(event) => event.stopPropagation()}
                         onPointerDown={(event) => event.stopPropagation()}
                         onBlur={commitArticleText}
                         onKeyDown={(event) => {
-                            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                            if (
+                                event.key === 'Enter' &&
+                                (event.metaKey || event.ctrlKey)
+                            ) {
                                 event.preventDefault();
                                 commitArticleText();
                             }
@@ -612,32 +767,48 @@ function ArticleTileCard({
                 )
             ) : null}
 
-            {visibleBadges.length > 0 || hiddenCount > 0 ? (
-                <div className="kb-card__badges" data-kb-no-card-select>
-                    {visibleBadges.map((badge) => (
-                        <span
-                            key={`${item.id}-${badge.label}`}
-                            className={cn(
-                                'kb-card__status',
-                                badge.tone === 'draft' && 'kb-card__status--draft',
-                                badge.tone === 'scheduled' && 'kb-card__status--scheduled',
-                            )}
-                        >
-                            {badge.label}
-                        </span>
-                    ))}
+            <div className="kb-card__footer" data-kb-no-card-select>
+                {visibleBadges.length > 0 || hiddenCount > 0 ? (
+                    <div className="kb-card__badges">
+                        {visibleBadges.map((badge) => (
+                            <span
+                                key={`${item.id}-${badge.label}`}
+                                className={cn(
+                                    'kb-card__status',
+                                    badge.tone === 'draft' &&
+                                        'kb-card__status--draft',
+                                    badge.tone === 'scheduled' &&
+                                        'kb-card__status--scheduled',
+                                )}
+                            >
+                                {badge.label}
+                            </span>
+                        ))}
 
-                    {hiddenCount > 0 ? (
-                        <span className="kb-card__status">+{hiddenCount}</span>
-                    ) : null}
-                </div>
-            ) : null}
+                        {hiddenCount > 0 ? (
+                            <span className="kb-card__status">
+                                +{hiddenCount}
+                            </span>
+                        ) : null}
+                    </div>
+                ) : (
+                    <span />
+                )}
+                <KnowledgeBaseMetaTrigger rows={metaRows} />
+            </div>
         </>
     );
 
     if (!editMode) {
         return (
-            <Link href={item.href} className="kb-card kb-card--article" title={item.title}>
+            <Link
+                href={item.href}
+                className={cn(
+                    'kb-card kb-card--article',
+                    isEmptyCard && 'kb-card--empty',
+                )}
+                title={item.title}
+            >
                 {body}
             </Link>
         );
@@ -657,6 +828,7 @@ function ArticleTileCard({
                 'kb-card kb-card--article kb-card--edit-mode',
                 selected && 'is-selected',
                 dragging && 'is-dragging',
+                isEmptyCard && 'kb-card--empty',
             )}
             style={style}
             data-kb-sort-kind="article"
@@ -664,7 +836,9 @@ function ArticleTileCard({
             role="button"
             tabIndex={0}
             onClick={handleCardClick}
-            onKeyDown={(event) => handleSelectableKeyDown(event, onToggleSelect)}
+            onKeyDown={(event) =>
+                handleSelectableKeyDown(event, onToggleSelect)
+            }
             onPointerDown={onPointerDown}
         >
             <button
@@ -739,12 +913,24 @@ type KnowledgeBaseCategoryViewProps = {
     onCreateArticle?: () => void;
     onRenameCategory?: (name: string) => void;
     onUploadCategoryIcon?: (file: File) => void;
-    onUploadCover?: (file: File) => void;
+    onUploadCover?: (payload: {
+        file: File;
+        presentation: CoverPresentation;
+    }) => void | Promise<void>;
     onChangeIcon?: (icon: string) => void;
     onDeleteCategory?: () => void;
-    onRenameSubcategory?: (item: KnowledgeBaseCategoryCard, name: string) => void;
-    onChangeSubcategoryIcon?: (item: KnowledgeBaseCategoryCard, icon: string) => void;
-    onUploadSubcategoryIcon?: (item: KnowledgeBaseCategoryCard, file: File) => void;
+    onRenameSubcategory?: (
+        item: KnowledgeBaseCategoryCard,
+        name: string,
+    ) => void;
+    onChangeSubcategoryIcon?: (
+        item: KnowledgeBaseCategoryCard,
+        icon: string,
+    ) => void;
+    onUploadSubcategoryIcon?: (
+        item: KnowledgeBaseCategoryCard,
+        file: File,
+    ) => void;
     onDeleteSubcategory?: (item: KnowledgeBaseCategoryCard) => void;
     onUpdateArticleCard?: (
         item: KnowledgeBaseArticleCard,
@@ -763,7 +949,10 @@ type KnowledgeBaseCategoryViewProps = {
         },
         targetCategoryId: number,
     ) => void | Promise<void>;
-    onReorderItems?: (payload: { categories: number[]; articles: number[] }) => void | Promise<void>;
+    onReorderItems?: (payload: {
+        categories: number[];
+        articles: number[];
+    }) => void | Promise<void>;
 };
 
 export function KnowledgeBaseCategoryView({
@@ -797,13 +986,27 @@ export function KnowledgeBaseCategoryView({
     const [titleDraft, setTitleDraft] = useState(category.name);
     const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
     const [isTileEditMode, setIsTileEditMode] = useState(false);
-    const [orderedSubcategories, setOrderedSubcategories] = useState(category.subcategories);
+    const [orderedSubcategories, setOrderedSubcategories] = useState(
+        category.subcategories,
+    );
     const [orderedArticles, setOrderedArticles] = useState(category.articles);
     const [dragItem, setDragItem] = useState<DragItem | null>(null);
-    const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([]);
+    const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>(
+        [],
+    );
     const [selectedArticleIds, setSelectedArticleIds] = useState<number[]>([]);
     const [isMoveOpen, setIsMoveOpen] = useState(false);
     const [isMoving, setIsMoving] = useState(false);
+    const [categoryCoverPreview, setCategoryCoverPreview] = useState<
+        string | null
+    >(category.cover_url);
+    const [pendingCategoryCoverFile, setPendingCategoryCoverFile] =
+        useState<File | null>(null);
+    const [categoryCoverDraft, setCategoryCoverDraft] =
+        useState<CoverPresentation>(parseCoverPresentation(category.cover_url));
+    const [isCategoryCoverEditorOpen, setIsCategoryCoverEditorOpen] =
+        useState(false);
+    const [isSavingCategoryCover, setIsSavingCategoryCover] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState<
         | { kind: 'category'; item: KnowledgeBaseCategoryCard }
         | { kind: 'article'; item: KnowledgeBaseArticleCard }
@@ -826,6 +1029,22 @@ export function KnowledgeBaseCategoryView({
         setTitleDraft(category.name);
         setIsTitleEditing(false);
     }, [category.name]);
+
+    useEffect(() => {
+        setCategoryCoverPreview(category.cover_url);
+        setCategoryCoverDraft(parseCoverPresentation(category.cover_url));
+        setPendingCategoryCoverFile(null);
+        setIsCategoryCoverEditorOpen(false);
+        setIsSavingCategoryCover(false);
+    }, [category.cover_url]);
+
+    useEffect(() => {
+        return () => {
+            if (categoryCoverPreview?.startsWith('blob:')) {
+                URL.revokeObjectURL(categoryCoverPreview);
+            }
+        };
+    }, [categoryCoverPreview]);
 
     useEffect(() => {
         setOrderedSubcategories(category.subcategories);
@@ -863,6 +1082,10 @@ export function KnowledgeBaseCategoryView({
             setDragItem(null);
             sortSessionRef.current = null;
             document.body.classList.remove('kb-is-sorting');
+            setIsCategoryCoverEditorOpen(false);
+            setPendingCategoryCoverFile(null);
+            setCategoryCoverPreview(category.cover_url);
+            setCategoryCoverDraft(parseCoverPresentation(category.cover_url));
         }
     }, [isTileEditMode]);
 
@@ -873,24 +1096,37 @@ export function KnowledgeBaseCategoryView({
     }, []);
 
     const selectedCategories = useMemo(
-        () => orderedSubcategories.filter((item) => selectedCategoryIds.includes(item.id)),
+        () =>
+            orderedSubcategories.filter((item) =>
+                selectedCategoryIds.includes(item.id),
+            ),
         [orderedSubcategories, selectedCategoryIds],
     );
     const selectedArticles = useMemo(
-        () => orderedArticles.filter((item) => selectedArticleIds.includes(item.id)),
+        () =>
+            orderedArticles.filter((item) =>
+                selectedArticleIds.includes(item.id),
+            ),
         [orderedArticles, selectedArticleIds],
     );
     const moveCategoryOptions = useMemo(
         () =>
             moveCategories.map((item) =>
-                selectedCategoryIds.includes(item.id) ? { ...item, is_current: true } : item,
+                selectedCategoryIds.includes(item.id)
+                    ? { ...item, is_current: true }
+                    : item,
             ),
         [moveCategories, selectedCategoryIds],
     );
     const selectedCount = selectedCategories.length + selectedArticles.length;
-    const selectedNoun = selectionNoun(selectedCategories.length, selectedArticles.length);
-    const selectedMoveLabel = selectedMovePhrase(selectedCategories.length, selectedArticles.length);
-
+    const selectedNoun = selectionNoun(
+        selectedCategories.length,
+        selectedArticles.length,
+    );
+    const selectedMoveLabel = selectedMovePhrase(
+        selectedCategories.length,
+        selectedArticles.length,
+    );
     const commitTitle = () => {
         const normalized = titleDraft.trim();
 
@@ -903,6 +1139,62 @@ export function KnowledgeBaseCategoryView({
         setIsTitleEditing(false);
     };
 
+    const categoryCoverFrameStyle = useMemo(
+        () => ({
+            height: `${categoryCoverDraft.height}px`,
+        }),
+        [categoryCoverDraft.height],
+    );
+
+    const resetCategoryCoverFrame = () => {
+        setCategoryCoverDraft({
+            x: DEFAULT_COVER_POSITION_X,
+            y: DEFAULT_COVER_POSITION_Y,
+            zoom: DEFAULT_COVER_ZOOM,
+            height: DEFAULT_COVER_HEIGHT,
+        });
+    };
+
+    const handleCategoryCoverUpload = (file: File) => {
+        if (categoryCoverPreview?.startsWith('blob:')) {
+            URL.revokeObjectURL(categoryCoverPreview);
+        }
+
+        setPendingCategoryCoverFile(file);
+        setCategoryCoverPreview(URL.createObjectURL(file));
+        setCategoryCoverDraft(parseCoverPresentation(category.cover_url));
+        setIsCategoryCoverEditorOpen(true);
+    };
+
+    const closeCategoryCoverEditor = () => {
+        if (categoryCoverPreview?.startsWith('blob:')) {
+            URL.revokeObjectURL(categoryCoverPreview);
+        }
+
+        setPendingCategoryCoverFile(null);
+        setCategoryCoverPreview(category.cover_url);
+        setCategoryCoverDraft(parseCoverPresentation(category.cover_url));
+        setIsCategoryCoverEditorOpen(false);
+    };
+
+    const saveCategoryCover = async () => {
+        if (!pendingCategoryCoverFile || !onUploadCover) {
+            return;
+        }
+
+        try {
+            setIsSavingCategoryCover(true);
+            await Promise.resolve(
+                onUploadCover({
+                    file: pendingCategoryCoverFile,
+                    presentation: categoryCoverDraft,
+                }),
+            );
+        } finally {
+            setIsSavingCategoryCover(false);
+        }
+    };
+
     const toggleCategorySelection = (id: number) => {
         if (suppressNextCardClickRef.current) {
             suppressNextCardClickRef.current = false;
@@ -910,7 +1202,9 @@ export function KnowledgeBaseCategoryView({
         }
 
         setSelectedCategoryIds((current) =>
-            current.includes(id) ? current.filter((currentId) => currentId !== id) : [...current, id],
+            current.includes(id)
+                ? current.filter((currentId) => currentId !== id)
+                : [...current, id],
         );
     };
 
@@ -921,11 +1215,16 @@ export function KnowledgeBaseCategoryView({
         }
 
         setSelectedArticleIds((current) =>
-            current.includes(id) ? current.filter((currentId) => currentId !== id) : [...current, id],
+            current.includes(id)
+                ? current.filter((currentId) => currentId !== id)
+                : [...current, id],
         );
     };
 
-    const persistOrder = (categories = orderedSubcategories, articles = orderedArticles) => {
+    const persistOrder = (
+        categories = orderedSubcategories,
+        articles = orderedArticles,
+    ) => {
         return onReorderItems?.({
             categories: categories.map((item) => item.id),
             articles: articles.map((item) => item.id),
@@ -941,10 +1240,15 @@ export function KnowledgeBaseCategoryView({
         }
 
         const elements = Array.from(
-            grid.querySelectorAll<HTMLElement>('[data-kb-sort-kind][data-kb-sort-id]'),
+            grid.querySelectorAll<HTMLElement>(
+                '[data-kb-sort-kind][data-kb-sort-id]',
+            ),
         );
         const firstRects = new Map(
-            elements.map((element) => [sortKey(element), element.getBoundingClientRect()]),
+            elements.map((element) => [
+                sortKey(element),
+                element.getBoundingClientRect(),
+            ]),
         );
 
         flushSync(update);
@@ -981,7 +1285,11 @@ export function KnowledgeBaseCategoryView({
         });
     };
 
-    const reorderLive = (kind: DragKind, targetId: number, placement: SortPlacement) => {
+    const reorderLive = (
+        kind: DragKind,
+        targetId: number,
+        placement: SortPlacement,
+    ) => {
         const session = sortSessionRef.current;
 
         if (!session || session.kind !== kind || session.id === targetId) {
@@ -1021,12 +1329,18 @@ export function KnowledgeBaseCategoryView({
         }
     };
 
-    const startPointerSort = (kind: DragKind, id: number, event: PointerEvent<HTMLElement>) => {
+    const startPointerSort = (
+        kind: DragKind,
+        id: number,
+        event: PointerEvent<HTMLElement>,
+    ) => {
         if (event.button !== 0 || isInteractiveElement(event.target)) {
             return;
         }
 
-        event.preventDefault();
+        if (event.pointerType === 'mouse') {
+            event.preventDefault();
+        }
 
         sortSessionRef.current = {
             kind,
@@ -1048,12 +1362,20 @@ export function KnowledgeBaseCategoryView({
                 return;
             }
 
-            const distance = Math.hypot(
-                moveEvent.clientX - session.startX,
-                moveEvent.clientY - session.startY,
-            );
+            const deltaX = moveEvent.clientX - session.startX;
+            const deltaY = moveEvent.clientY - session.startY;
+            const distance = Math.hypot(deltaX, deltaY);
 
-            if (!session.isDragging && distance < 8) {
+            if (
+                !session.isDragging &&
+                moveEvent.pointerType === 'touch' &&
+                Math.abs(deltaY) > Math.abs(deltaX) + 6
+            ) {
+                handlePointerEnd(moveEvent);
+                return;
+            }
+
+            if (!session.isDragging && distance < 10) {
                 return;
             }
 
@@ -1086,7 +1408,9 @@ export function KnowledgeBaseCategoryView({
                 grid.querySelectorAll<HTMLElement>(
                     `[data-kb-sort-kind="${session.kind}"][data-kb-sort-id]`,
                 ),
-            ).filter((element) => Number(element.dataset.kbSortId) !== session.id);
+            ).filter(
+                (element) => Number(element.dataset.kbSortId) !== session.id,
+            );
 
             let nearestTargetId: number | null = null;
             let nearestPlacement: SortPlacement = 'before';
@@ -1096,12 +1420,16 @@ export function KnowledgeBaseCategoryView({
                 const rect = element.getBoundingClientRect();
                 const centerX = rect.left + rect.width / 2;
                 const centerY = rect.top + rect.height / 2;
-                const distance = Math.hypot(moveEvent.clientX - centerX, moveEvent.clientY - centerY);
+                const distance = Math.hypot(
+                    moveEvent.clientX - centerX,
+                    moveEvent.clientY - centerY,
+                );
 
                 if (distance < nearestDistance) {
                     const deltaX = moveEvent.clientX - centerX;
                     const deltaY = moveEvent.clientY - centerY;
-                    const useVerticalIntent = Math.abs(deltaY) > rect.height * 0.32;
+                    const useVerticalIntent =
+                        Math.abs(deltaY) > rect.height * 0.32;
 
                     nearestDistance = distance;
                     nearestTargetId = Number(element.dataset.kbSortId);
@@ -1136,7 +1464,10 @@ export function KnowledgeBaseCategoryView({
 
             if (session.didReorder) {
                 void Promise.resolve(
-                    persistOrder(orderedSubcategoriesRef.current, orderedArticlesRef.current),
+                    persistOrder(
+                        orderedSubcategoriesRef.current,
+                        orderedArticlesRef.current,
+                    ),
                 );
             }
 
@@ -1148,7 +1479,9 @@ export function KnowledgeBaseCategoryView({
             window.removeEventListener('pointercancel', handlePointerEnd);
         };
 
-        window.addEventListener('pointermove', handlePointerMove, { passive: false });
+        window.addEventListener('pointermove', handlePointerMove, {
+            passive: false,
+        });
         window.addEventListener('pointerup', handlePointerEnd);
         window.addEventListener('pointercancel', handlePointerEnd);
     };
@@ -1218,14 +1551,26 @@ export function KnowledgeBaseCategoryView({
                 <div className="kb-category__shell">
                     <Breadcrumbs breadcrumbs={breadcrumbs} />
 
-                    {canManage ? (
+                    {canManage && isTileEditMode ? (
                         <button
                             type="button"
                             className="kb-category__cover-button"
-                            onClick={() => categoryCoverUploadRef.current?.click()}
+                            onClick={() =>
+                                categoryCoverUploadRef.current?.click()
+                            }
                         >
-                            {category.cover_url ? (
-                                <img src={category.cover_url} alt="" className="kb-category__cover" />
+                            {categoryCoverPreview ? (
+                                <KnowledgeBaseImageFrame
+                                    src={categoryCoverPreview}
+                                    alt=""
+                                    height={categoryCoverDraft.height}
+                                    focusX={categoryCoverDraft.x}
+                                    focusY={categoryCoverDraft.y}
+                                    zoomPercent={categoryCoverDraft.zoom}
+                                    frameClassName="kb-category__cover-frame"
+                                    imageClassName="kb-category__cover"
+                                    style={categoryCoverFrameStyle}
+                                />
                             ) : (
                                 <span className="kb-category__cover-placeholder">
                                     <ImagePlus className="size-4" />
@@ -1234,7 +1579,17 @@ export function KnowledgeBaseCategoryView({
                             )}
                         </button>
                     ) : category.cover_url ? (
-                        <img src={category.cover_url} alt="" className="kb-category__cover" />
+                        <KnowledgeBaseImageFrame
+                            src={category.cover_url}
+                            alt=""
+                            height={categoryCoverDraft.height}
+                            focusX={categoryCoverDraft.x}
+                            focusY={categoryCoverDraft.y}
+                            zoomPercent={categoryCoverDraft.zoom}
+                            frameClassName="kb-category__cover-frame"
+                            imageClassName="kb-category__cover"
+                            style={categoryCoverFrameStyle}
+                        />
                     ) : null}
 
                     <input
@@ -1246,7 +1601,7 @@ export function KnowledgeBaseCategoryView({
                             const file = event.target.files?.[0] ?? null;
 
                             if (file) {
-                                onUploadCover?.(file);
+                                handleCategoryCoverUpload(file);
                             }
 
                             event.target.value = '';
@@ -1273,14 +1628,30 @@ export function KnowledgeBaseCategoryView({
                                 Добавить подраздел
                             </button>
 
+                            {canCreateArticle ? (
+                                <button
+                                    type="button"
+                                    onClick={onCreateArticle}
+                                    className="kb-atb-btn kb-atb-btn--primary"
+                                >
+                                    <FilePlus2 className="size-4" />
+                                    Добавить статью
+                                </button>
+                            ) : null}
+
                             <button
                                 type="button"
-                                onClick={() => setIsTileEditMode((value) => !value)}
-                                className={cn('kb-atb-btn', isTileEditMode && 'kb-atb-btn--primary')}
+                                onClick={() =>
+                                    setIsTileEditMode((value) => !value)
+                                }
+                                className={cn(
+                                    'kb-atb-btn',
+                                    isTileEditMode && 'kb-atb-btn--primary',
+                                )}
                             >
                                 {isTileEditMode ? (
                                     <>
-                                        <X className="size-4" />
+                                        <Check className="size-4" />
                                         Готово
                                     </>
                                 ) : (
@@ -1302,6 +1673,69 @@ export function KnowledgeBaseCategoryView({
                                 </button>
                             ) : null}
                         </div>
+                    ) : null}
+
+                    {canManage &&
+                    isTileEditMode &&
+                    isCategoryCoverEditorOpen &&
+                    categoryCoverPreview &&
+                    pendingCategoryCoverFile ? (
+                        <KnowledgeBaseImageEditorControls
+                            title="Кадр обложки"
+                            note="Настройка сохранится вместе с разделом."
+                            horizontal={categoryCoverDraft.x}
+                            vertical={categoryCoverDraft.y}
+                            zoom={categoryCoverDraft.zoom}
+                            height={categoryCoverDraft.height}
+                            onHorizontalChange={(value) =>
+                                setCategoryCoverDraft((current) => ({
+                                    ...current,
+                                    x: value,
+                                }))
+                            }
+                            onVerticalChange={(value) =>
+                                setCategoryCoverDraft((current) => ({
+                                    ...current,
+                                    y: value,
+                                }))
+                            }
+                            onZoomChange={(value) =>
+                                setCategoryCoverDraft((current) => ({
+                                    ...current,
+                                    zoom: value,
+                                }))
+                            }
+                            onHeightChange={(value) =>
+                                setCategoryCoverDraft((current) => ({
+                                    ...current,
+                                    height: value,
+                                }))
+                            }
+                            onReset={resetCategoryCoverFrame}
+                            actions={
+                                <>
+                                    <button
+                                        type="button"
+                                        className="kb-atb-btn"
+                                        onClick={closeCategoryCoverEditor}
+                                        disabled={isSavingCategoryCover}
+                                    >
+                                        Назад
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        className="kb-atb-btn kb-atb-btn--primary"
+                                        onClick={() => void saveCategoryCover()}
+                                        disabled={isSavingCategoryCover}
+                                    >
+                                        {isSavingCategoryCover
+                                            ? 'Сохраняем...'
+                                            : 'Сохранить обложку'}
+                                    </button>
+                                </>
+                            }
+                        />
                     ) : null}
 
                     <div className="kb-category__header">
@@ -1339,7 +1773,9 @@ export function KnowledgeBaseCategoryView({
                                 <input
                                     ref={titleInputRef}
                                     value={titleDraft}
-                                    onChange={(event) => setTitleDraft(event.target.value)}
+                                    onChange={(event) =>
+                                        setTitleDraft(event.target.value)
+                                    }
                                     onBlur={commitTitle}
                                     onKeyDown={(event) => {
                                         if (event.key === 'Enter') {
@@ -1364,11 +1800,17 @@ export function KnowledgeBaseCategoryView({
                                     {category.name}
                                 </button>
                             ) : (
-                                <div className="kb-category__title">{category.name}</div>
+                                <div className="kb-category__title">
+                                    {category.name}
+                                </div>
                             )}
 
-                            <div className="kb-category__meta">
-                                {formatMaterialsCount(category.materials_count)}
+                            <div className="kb-category__meta-row">
+                                <div className="kb-category__meta">
+                                    {formatMaterialsCount(
+                                        category.materials_count,
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1378,7 +1820,9 @@ export function KnowledgeBaseCategoryView({
                         anchorEl={categoryIconButtonRef.current}
                         value={category.icon}
                         onSelect={(icon) => onChangeIcon?.(icon)}
-                        onUploadRequest={() => categoryIconUploadRef.current?.click()}
+                        onUploadRequest={() =>
+                            categoryIconUploadRef.current?.click()
+                        }
                         onClose={() => setIsIconPickerOpen(false)}
                     />
 
@@ -1410,7 +1854,8 @@ export function KnowledgeBaseCategoryView({
                             </div>
 
                             <div className="kb-tile-edit-bar__actions">
-                                {selectedCount > 0 && moveCategories.length > 0 ? (
+                                {selectedCount > 0 &&
+                                moveCategories.length > 0 ? (
                                     <button
                                         type="button"
                                         className="kb-atb-btn"
@@ -1425,7 +1870,11 @@ export function KnowledgeBaseCategoryView({
                                     <button
                                         type="button"
                                         className="kb-atb-btn kb-atb-btn--danger"
-                                        onClick={() => setDeleteTarget({ kind: 'selection' })}
+                                        onClick={() =>
+                                            setDeleteTarget({
+                                                kind: 'selection',
+                                            })
+                                        }
                                     >
                                         <Trash2 className="size-4" />
                                         Удалить выбранное
@@ -1453,14 +1902,26 @@ export function KnowledgeBaseCategoryView({
                                 item={item}
                                 editMode={canManage && isTileEditMode}
                                 selected={selectedCategoryIds.includes(item.id)}
-                                dragging={dragItem?.kind === 'category' && dragItem.id === item.id}
+                                dragging={
+                                    dragItem?.kind === 'category' &&
+                                    dragItem.id === item.id
+                                }
                                 style={sortableStyle(index)}
-                                onToggleSelect={() => toggleCategorySelection(item.id)}
+                                onToggleSelect={() =>
+                                    toggleCategorySelection(item.id)
+                                }
                                 onRename={onRenameSubcategory}
                                 onChangeIcon={onChangeSubcategoryIcon}
                                 onUploadIcon={onUploadSubcategoryIcon}
-                                onDelete={(target) => setDeleteTarget({ kind: 'category', item: target })}
-                                onPointerDown={(event) => startPointerSort('category', item.id, event)}
+                                onDelete={(target) =>
+                                    setDeleteTarget({
+                                        kind: 'category',
+                                        item: target,
+                                    })
+                                }
+                                onPointerDown={(event) =>
+                                    startPointerSort('category', item.id, event)
+                                }
                             />
                         ))}
 
@@ -1470,13 +1931,27 @@ export function KnowledgeBaseCategoryView({
                                 item={item}
                                 editMode={canManage && isTileEditMode}
                                 selected={selectedArticleIds.includes(item.id)}
-                                dragging={dragItem?.kind === 'article' && dragItem.id === item.id}
-                                style={sortableStyle(orderedSubcategories.length + index)}
-                                onToggleSelect={() => toggleArticleSelection(item.id)}
+                                dragging={
+                                    dragItem?.kind === 'article' &&
+                                    dragItem.id === item.id
+                                }
+                                style={sortableStyle(
+                                    orderedSubcategories.length + index,
+                                )}
+                                onToggleSelect={() =>
+                                    toggleArticleSelection(item.id)
+                                }
                                 onUpdate={onUpdateArticleCard}
-                                onDelete={(target) => setDeleteTarget({ kind: 'article', item: target })}
+                                onDelete={(target) =>
+                                    setDeleteTarget({
+                                        kind: 'article',
+                                        item: target,
+                                    })
+                                }
                                 onDuplicate={onDuplicateArticle}
-                                onPointerDown={(event) => startPointerSort('article', item.id, event)}
+                                onPointerDown={(event) =>
+                                    startPointerSort('article', item.id, event)
+                                }
                             />
                         ))}
 
@@ -1524,15 +1999,17 @@ export function KnowledgeBaseCategoryView({
                 }
                 description={
                     deleteTarget?.kind === 'selection'
-                        ? `Будут удалены ${selectedCategories.length} подразделов и ${selectedArticles.length} статей.`
+                        ? `Будут удалены ${selectedCategories.length} подразделов и ${selectedArticles.length} статей вместе со всем вложенным содержимым.`
                         : deleteTarget?.kind === 'category'
-                          ? `Раздел «${deleteTarget.item.name}» будет удален без возможности восстановления.`
+                          ? `Раздел «${deleteTarget.item.name}» будет удален вместе со всем вложенным содержимым без возможности восстановления.`
                           : deleteTarget?.kind === 'article'
                             ? `Статья «${deleteTarget.item.title}» будет удалена без возможности восстановления.`
                             : ''
                 }
                 confirmLabel={
-                    deleteTarget?.kind === 'selection' ? 'Удалить выбранное' : 'Удалить'
+                    deleteTarget?.kind === 'selection'
+                        ? 'Удалить выбранное'
+                        : 'Удалить'
                 }
                 danger
                 processing={isDeleting}

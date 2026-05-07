@@ -177,7 +177,7 @@ vendor\bin\pint.bat --test
 
 Если содержимое `public` лежит в `public_html`, а приложение в `ds-art-app`, нужно поправить `public_html/index.php`.
 
-Текущий GitHub Actions workflow делает это автоматически. Если деплой выполняется руками, правка такая:
+Текущий GitHub Actions workflow делает это автоматически. Если деплой выполняется руками, шаг такой:
 
 Было:
 

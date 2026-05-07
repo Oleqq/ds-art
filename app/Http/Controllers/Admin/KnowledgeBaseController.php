@@ -7,9 +7,12 @@ use App\Http\Requests\Admin\KnowledgeBase\UpsertKnowledgeCategoryRequest;
 use App\Models\KnowledgeCategory;
 use App\Models\User;
 use App\Support\Audit\AuditLogger;
+use App\Support\KnowledgeBase\KnowledgeBaseCascadeDelete;
 use App\Support\KnowledgeBase\KnowledgeBasePresenter;
+use App\Support\PublicStorageAsset;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -109,14 +112,9 @@ class KnowledgeBaseController extends Controller
         Request $request,
         KnowledgeCategory $category,
         AuditLogger $auditLogger,
+        KnowledgeBaseCascadeDelete $cascadeDelete,
     ): RedirectResponse {
         $this->authorize('delete', $category);
-
-        if ($category->children()->exists() || $category->articles()->exists()) {
-            throw ValidationException::withMessages([
-                'category' => 'Нельзя удалить раздел, пока внутри есть подразделы или статьи.',
-            ]);
-        }
 
         $parent = $category->parent;
         $before = $category->only([
@@ -126,11 +124,7 @@ class KnowledgeBaseController extends Controller
             'slug',
             'is_visible_to_employees',
         ]);
-
-        $this->deleteStoredFile($category->cover_url);
-        $this->deleteStoredFile($category->icon_image_url);
-
-        $category->delete();
+        $cascadeDelete->deleteCategoryTree($category);
 
         $auditLogger->record(
             request: $request,
@@ -205,6 +199,93 @@ class KnowledgeBaseController extends Controller
         return redirect()
             ->to($this->safeReturnTo($request, route('admin.knowledge-base.categories.show', $category->fresh())))
             ->with('success', 'Раздел перемещен.');
+    }
+
+    public function place(
+        Request $request,
+        KnowledgeCategory $category,
+        AuditLogger $auditLogger,
+    ): RedirectResponse {
+        $this->authorize('update', $category);
+
+        $payload = $request->validate([
+            'parent_id' => ['nullable', 'integer', 'exists:knowledge_categories,id'],
+            'ordered_category_ids' => ['required', 'array', 'min:1'],
+            'ordered_category_ids.*' => ['integer', 'exists:knowledge_categories,id'],
+            'return_to' => ['nullable', 'string', 'max:2048'],
+        ]);
+
+        $targetParentId = $request->filled('parent_id')
+            ? (int) $payload['parent_id']
+            : null;
+
+        if ($targetParentId === $category->id || $this->isDescendantOf($targetParentId, $category)) {
+            throw ValidationException::withMessages([
+                'parent_id' => 'Раздел нельзя переместить внутрь самого себя или своего подраздела.',
+            ]);
+        }
+
+        $before = $category->only(['parent_id', 'sort_order']);
+
+        DB::transaction(function () use ($request, $category, $payload, $targetParentId) {
+            $category->update([
+                'parent_id' => $targetParentId,
+                'updated_by' => $request->user()->id,
+            ]);
+
+            $orderedIds = collect($payload['ordered_category_ids'])
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
+
+            if (! $orderedIds->contains($category->id)) {
+                $orderedIds->push($category->id);
+            }
+
+            $siblingIds = KnowledgeCategory::query()
+                ->when(
+                    $targetParentId,
+                    fn ($query) => $query->where('parent_id', $targetParentId),
+                    fn ($query) => $query->whereNull('parent_id'),
+                )
+                ->orderBy('sort_order')
+                ->orderBy('name')
+                ->pluck('id');
+
+            $orderedSiblingIds = $orderedIds
+                ->filter(fn ($id) => $siblingIds->contains($id))
+                ->values();
+
+            $remainingSiblingIds = $siblingIds
+                ->reject(fn ($id) => $orderedSiblingIds->contains($id))
+                ->values();
+
+            $orderedSiblingIds
+                ->concat($remainingSiblingIds)
+                ->values()
+                ->each(function (int $id, int $index) use ($request) {
+                    KnowledgeCategory::query()
+                        ->whereKey($id)
+                        ->update([
+                            'sort_order' => $index + 1,
+                            'updated_by' => $request->user()->id,
+                        ]);
+                });
+        });
+
+        $category->refresh();
+
+        $auditLogger->record(
+            request: $request,
+            action: 'knowledge_category.placed',
+            subject: $category,
+            before: $before,
+            after: $category->only(['parent_id', 'sort_order']),
+        );
+
+        return redirect()
+            ->to($this->safeReturnTo($request, route('admin.knowledge-base.categories.show', $category)))
+            ->with('success', 'Порядок разделов обновлен.');
     }
 
     private function applyReorder(Request $request, ?KnowledgeCategory $parent): RedirectResponse
@@ -295,7 +376,10 @@ class KnowledgeBaseController extends Controller
             );
 
             $this->deleteStoredFile($category->cover_url);
-            $updates['cover_url'] = Storage::url($path);
+            $updates['cover_url'] = PublicStorageAsset::appendQueryParameters(
+                PublicStorageAsset::url($path),
+                $request->coverPresentationData(),
+            );
         } elseif ($request->boolean('clear_cover')) {
             $this->deleteStoredFile($category->cover_url);
             $updates['cover_url'] = null;
@@ -308,7 +392,7 @@ class KnowledgeBaseController extends Controller
             );
 
             $this->deleteStoredFile($category->icon_image_url);
-            $updates['icon_image_url'] = Storage::url($path);
+            $updates['icon_image_url'] = PublicStorageAsset::url($path);
         } elseif ($request->boolean('clear_icon_image')) {
             $this->deleteStoredFile($category->icon_image_url);
             $updates['icon_image_url'] = null;
@@ -322,12 +406,7 @@ class KnowledgeBaseController extends Controller
 
     private function deleteStoredFile(?string $url): void
     {
-        if (! $url || ! str_starts_with($url, '/storage/')) {
-            return;
-        }
-
-        $path = ltrim(str_replace('/storage/', '', $url), '/');
-        Storage::disk('public')->delete($path);
+        PublicStorageAsset::delete($url);
     }
 
     private function makeUniqueSlug(string $name, ?KnowledgeCategory $ignore = null): string

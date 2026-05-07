@@ -14,7 +14,7 @@ return [
     |
     */
 
-    'default' => env('MAIL_MAILER', 'log'),
+    'default' => env('SMTP_MAILER') ?: env('MAIL_MAILER', 'log'),
 
     /*
     |--------------------------------------------------------------------------
@@ -39,14 +39,19 @@ return [
 
         'smtp' => [
             'transport' => 'smtp',
-            'scheme' => env('MAIL_SCHEME'),
+            'scheme' => env('SMTP_SCHEME')
+                ?: env('SMTP_ENCRYPTION')
+                ?: env('MAIL_SCHEME')
+                ?: env('MAIL_ENCRYPTION'),
             'url' => env('MAIL_URL'),
-            'host' => env('MAIL_HOST', '127.0.0.1'),
-            'port' => env('MAIL_PORT', 2525),
-            'username' => env('MAIL_USERNAME'),
-            'password' => env('MAIL_PASSWORD'),
+            'host' => env('SMTP_HOST') ?: env('MAIL_HOST', '127.0.0.1'),
+            'port' => env('SMTP_PORT') ?: env('MAIL_PORT', 2525),
+            'username' => env('SMTP_USERNAME') ?: env('MAIL_USERNAME'),
+            'password' => env('SMTP_PASSWORD') ?: env('MAIL_PASSWORD'),
             'timeout' => null,
-            'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
+            'local_domain' => env('SMTP_EHLO_DOMAIN')
+                ?: env('MAIL_EHLO_DOMAIN')
+                ?: parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST),
         ],
 
         'ses' => [
@@ -111,8 +116,8 @@ return [
     */
 
     'from' => [
-        'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
-        'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
+        'address' => env('SMTP_FROM_ADDRESS') ?: env('MAIL_FROM_ADDRESS', 'hello@example.com'),
+        'name' => env('SMTP_FROM_NAME') ?: env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
 
 ];

@@ -23,7 +23,19 @@ export default function AdminEmployeeShow({ employee }: AdminEmployeeShowProps) 
                     </Link>
                 </div>
 
-                <EmployeeDetailView employee={employee} showManagerNotes readonly={false} />
+                <EmployeeDetailView
+                    employee={employee}
+                    showManagerNotes
+                    readonly={false}
+                    photoUploadUrl={`/admin/employees/${employee.id}/photo`}
+                    statusToggleUrl={`/admin/employees/${employee.id}/status`}
+                    deleteUrl={`/admin/employees/${employee.id}`}
+                    editHref={`/admin/employees/${employee.id}/edit`}
+                    fileUploadUrl={`/admin/employees/${employee.id}/files`}
+                    fileDeleteUrl={(fileId) =>
+                        `/admin/employees/${employee.id}/files/${fileId}`
+                    }
+                />
             </div>
         </>
     );

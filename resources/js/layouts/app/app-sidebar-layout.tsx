@@ -10,9 +10,9 @@ export default function AppSidebarLayout({
 }: AppLayoutProps) {
     return (
         <AppShell variant="sidebar">
-            <AppMobileShell breadcrumbs={breadcrumbs} />
             <AppSidebar />
             <AppContent variant="sidebar" className="overflow-x-hidden">
+                <AppMobileShell breadcrumbs={breadcrumbs} />
                 {children}
             </AppContent>
         </AppShell>

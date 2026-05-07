@@ -31,6 +31,8 @@ export type EmployeeListItem = {
 
 export type EmployeeRecord = EmployeeListItem & {
     manager_notes: string | null;
+    can_delete?: boolean;
+    can_toggle_status?: boolean;
     schedule: EmployeeSchedule | null;
     files: EmployeeFile[];
 };
@@ -44,4 +46,17 @@ export type EmployeeFormPayload = {
     status: EmployeeStatus;
     manager_notes: string;
     schedule: EmployeeSchedule;
+};
+
+export type EmployeeRoleStat = {
+    name: string;
+    employees_count: number;
+    can_delete: boolean;
+    employees: Array<{
+        id: number;
+        name: string;
+        email: string;
+        href: string;
+        photo_url: string | null;
+    }>;
 };

@@ -63,7 +63,12 @@ export default function AdminEmployeesIndex({
                     </button>
                 </div>
 
-                <EmployeesStats total={stats.total} active={stats.active} positions={stats.positions} />
+                <EmployeesStats
+                    total={stats.total}
+                    active={stats.active}
+                    positions={stats.positions}
+                    rolesHref="/admin/employees/roles"
+                />
 
                 <div className="filter-bar filter-bar__layout flex flex-col gap-3 p-4 md:flex-row md:items-center">
                     <label className="relative block">

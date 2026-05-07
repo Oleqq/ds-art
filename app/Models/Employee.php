@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Support\Employees\EmployeeRolesCatalog;
+use App\Support\PublicStorageAsset;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -71,6 +73,13 @@ class Employee extends Model
         );
     }
 
+    protected function photoUrl(): Attribute
+    {
+        return Attribute::make(
+            get: static fn (?string $value): ?string => PublicStorageAsset::normalize($value),
+        );
+    }
+
     public static function defaultSchedule(): array
     {
         return self::DEFAULT_SCHEDULE;
@@ -81,9 +90,32 @@ class Employee extends Model
         return self::POSITIONS;
     }
 
+    public static function isProtectedPosition(?string $position): bool
+    {
+        $normalized = mb_strtolower(trim((string) $position));
+
+        if ($normalized === '') {
+            return false;
+        }
+
+        foreach (['руковод', 'директор', 'админ', 'admin', 'chief', 'lead', 'owner'] as $keyword) {
+            if (str_contains($normalized, $keyword)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function isProtectedFromDeactivation(): bool
+    {
+        return $this->user?->isAdmin() || self::isProtectedPosition($this->position);
+    }
+
     public static function availablePositions(): array
     {
         return collect(self::POSITIONS)
+            ->merge(EmployeeRolesCatalog::stored())
             ->merge(
                 self::query()
                     ->whereNotNull('position')

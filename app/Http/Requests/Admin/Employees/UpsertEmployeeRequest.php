@@ -40,6 +40,7 @@ class UpsertEmployeeRequest extends FormRequest
                 'email',
                 'max:120',
                 Rule::unique('employees', 'email')->ignore($employee),
+                Rule::unique('users', 'email')->ignore($employee?->user?->id),
             ],
             'phone' => ['nullable', 'string', 'max:40'],
             'position' => ['required', 'string', 'max:120'],
@@ -57,10 +58,16 @@ class UpsertEmployeeRequest extends FormRequest
     {
         return [
             function (Validator $validator): void {
+                $employee = $this->route('employee');
                 $start = (string) $this->input('schedule.start', '');
                 $end = (string) $this->input('schedule.end', '');
+                $position = (string) $this->input('position', '');
+                $status = (string) $this->input('status', Employee::STATUS_ACTIVE);
+                $isProtected = $employee instanceof Employee
+                    ? $employee->isProtectedFromDeactivation()
+                    : Employee::isProtectedPosition($position);
 
-                if ($this->input('position', '') === '') {
+                if ($position === '') {
                     $validator->errors()->add('position', 'Укажите роль сотрудника.');
                 }
 
@@ -68,6 +75,13 @@ class UpsertEmployeeRequest extends FormRequest
                     $validator->errors()->add(
                         'schedule.end',
                         'Конец рабочего дня должен быть позже начала.',
+                    );
+                }
+
+                if ($status === Employee::STATUS_INACTIVE && $isProtected) {
+                    $validator->errors()->add(
+                        'status',
+                        'Аккаунты руководства и администраторов нельзя деактивировать.',
                     );
                 }
             },

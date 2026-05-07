@@ -1,12 +1,5 @@
 import { Head, router } from '@inertiajs/react';
-import {
-    Eye,
-    FileText,
-    Pencil,
-    Plus,
-    Save,
-    Trash2,
-} from 'lucide-react';
+import { Eye, FileText, Pencil, Plus, Save, Trash2 } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { KnowledgeBaseIcon } from '@/features/knowledge-base/components/knowledge-base-icon';
 import AdminLayout from '@/layouts/admin-layout';
@@ -18,6 +11,7 @@ type AccessEmployee = {
     position: string;
     avatar: string | null;
     is_active: boolean;
+    can_toggle_status: boolean;
 };
 
 type AccessPermission = {
@@ -184,6 +178,7 @@ export default function AccessIndex({
             ),
     );
     const [isSaving, setIsSaving] = useState(false);
+    const [saveNotice, setSaveNotice] = useState<string | null>(null);
 
     useEffect(() => {
         setDraftPermission(permission ?? fallbackPermission);
@@ -203,10 +198,23 @@ export default function AccessIndex({
                 ),
             ),
         );
+        setSaveNotice(null);
     }, [permission, categories, selectedUserId]);
 
+    useEffect(() => {
+        if (!saveNotice) {
+            return;
+        }
+
+        const timeoutId = window.setTimeout(() => setSaveNotice(null), 2800);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [saveNotice]);
+
     const groupedCategories = useMemo(() => {
-        const roots = categories.filter((category) => category.parent_id === null);
+        const roots = categories.filter(
+            (category) => category.parent_id === null,
+        );
         const childrenByParent = new Map<number, AccessCategory[]>();
 
         categories
@@ -224,6 +232,99 @@ export default function AccessIndex({
         }));
     }, [categories]);
 
+    const categoryById = useMemo(
+        () => new Map(categories.map((category) => [category.id, category])),
+        [categories],
+    );
+
+    const descendantsByCategoryId = useMemo(() => {
+        const childrenByParent = new Map<number, number[]>();
+
+        categories.forEach((category) => {
+            if (category.parent_id === null) {
+                return;
+            }
+
+            const siblings = childrenByParent.get(category.parent_id) ?? [];
+            siblings.push(category.id);
+            childrenByParent.set(category.parent_id, siblings);
+        });
+
+        const collectDescendants = (categoryId: number): number[] => {
+            const children = childrenByParent.get(categoryId) ?? [];
+
+            return children.flatMap((childId) => [
+                childId,
+                ...collectDescendants(childId),
+            ]);
+        };
+
+        return new Map(
+            categories.map((category) => [
+                category.id,
+                collectDescendants(category.id),
+            ]),
+        );
+    }, [categories]);
+
+    const ancestorsByCategoryId = useMemo(() => {
+        const collectAncestors = (categoryId: number): number[] => {
+            const category = categoryById.get(categoryId);
+
+            if (!category?.parent_id) {
+                return [];
+            }
+
+            return [
+                category.parent_id,
+                ...collectAncestors(category.parent_id),
+            ];
+        };
+
+        return new Map(
+            categories.map((category) => [
+                category.id,
+                collectAncestors(category.id),
+            ]),
+        );
+    }, [categories, categoryById]);
+
+    const articleIdsByCategoryId = useMemo(
+        () =>
+            new Map(
+                categories.map((category) => [
+                    category.id,
+                    category.articles.map((article) => article.id),
+                ]),
+            ),
+        [categories],
+    );
+
+    const categoryIdByArticleId = useMemo(
+        () =>
+            new Map(
+                categories.flatMap((category) =>
+                    category.articles.map(
+                        (article) => [article.id, category.id] as const,
+                    ),
+                ),
+            ),
+        [categories],
+    );
+
+    const allCategoryIds = useMemo(
+        () => categories.map((category) => category.id),
+        [categories],
+    );
+
+    const allArticleIds = useMemo(
+        () =>
+            categories.flatMap((category) =>
+                category.articles.map((article) => article.id),
+            ),
+        [categories],
+    );
+
     const selectEmployee = (employee: AccessEmployee) => {
         router.get(
             '/admin/access',
@@ -235,21 +336,100 @@ export default function AccessIndex({
         );
     };
 
+    const patchDraftPermission = (
+        updater: (current: AccessPermission) => AccessPermission,
+    ) => {
+        setSaveNotice(null);
+        setDraftPermission(updater);
+    };
+
+    const toggleViewAllArticles = (checked: boolean) => {
+        patchDraftPermission((current) => ({
+            ...current,
+            view_all_articles: checked,
+        }));
+
+        if (checked) {
+            setCategoryIds(new Set(allCategoryIds));
+            setArticleIds(new Set(allArticleIds));
+
+            return;
+        }
+
+        setCategoryIds(new Set());
+        setArticleIds(new Set());
+    };
+
     const toggleCategory = (categoryId: number, checked: boolean) => {
+        setSaveNotice(null);
+        setDraftPermission((current) =>
+            current.view_all_articles
+                ? { ...current, view_all_articles: false }
+                : current,
+        );
+
         setCategoryIds((current) => {
             const next = new Set(current);
+            const descendants = descendantsByCategoryId.get(categoryId) ?? [];
+            const ancestors = ancestorsByCategoryId.get(categoryId) ?? [];
 
             if (checked) {
                 next.add(categoryId);
+                descendants.forEach((id) => next.add(id));
+                ancestors.forEach((id) => next.add(id));
             } else {
                 next.delete(categoryId);
+                descendants.forEach((id) => next.delete(id));
             }
 
             return next;
         });
+
+        if (!checked) {
+            setArticleIds((current) => {
+                const next = new Set(current);
+                const relatedCategoryIds = [
+                    categoryId,
+                    ...(descendantsByCategoryId.get(categoryId) ?? []),
+                ];
+
+                relatedCategoryIds.forEach((id) => {
+                    (articleIdsByCategoryId.get(id) ?? []).forEach(
+                        (articleId) => next.delete(articleId),
+                    );
+                });
+
+                return next;
+            });
+        }
     };
 
     const toggleArticle = (articleId: number, checked: boolean) => {
+        setSaveNotice(null);
+
+        setDraftPermission((current) =>
+            current.view_all_articles
+                ? { ...current, view_all_articles: false }
+                : current,
+        );
+
+        if (checked) {
+            const categoryId = categoryIdByArticleId.get(articleId);
+
+            if (categoryId) {
+                setCategoryIds((current) => {
+                    const next = new Set(current);
+                    const ancestors =
+                        ancestorsByCategoryId.get(categoryId) ?? [];
+
+                    next.add(categoryId);
+                    ancestors.forEach((id) => next.add(id));
+
+                    return next;
+                });
+            }
+        }
+
         setArticleIds((current) => {
             const next = new Set(current);
 
@@ -280,6 +460,7 @@ export default function AccessIndex({
             {
                 preserveScroll: true,
                 preserveState: true,
+                onSuccess: () => setSaveNotice('Изменения сохранены'),
                 onFinish: () => setIsSaving(false),
             },
         );
@@ -293,18 +474,25 @@ export default function AccessIndex({
                 <header className="access-page__header access-page__header--plain">
                     <div>
                         <h1>Права доступа</h1>
-                        <p>Настройка доступа к базе знаний для каждого сотрудника</p>
+                        <p>
+                            Настройка доступа к базе знаний для каждого
+                            сотрудника
+                        </p>
                     </div>
                 </header>
 
                 <div className="access-hint">
                     <span aria-hidden="true">🔒</span>
-                    Сотрудники видят только разделы, к которым у них есть доступ. Они могут создавать статьи в доступных разделах и удалять только свои.
+                    Сотрудники видят только разделы, к которым у них есть
+                    доступ. Они могут создавать статьи в доступных разделах и
+                    удалять только свои.
                 </div>
 
                 <div className="access-matrix">
                     <aside className="access-employees">
-                        <div className="access-employees__title">Сотрудники</div>
+                        <div className="access-employees__title">
+                            Сотрудники
+                        </div>
 
                         <div className="access-employees__list">
                             {employees.map((employee) => (
@@ -328,15 +516,21 @@ export default function AccessIndex({
                                         <span
                                             className="access-emp-avatar"
                                             style={{
-                                                backgroundColor: avatarColor(employee.id),
+                                                backgroundColor: avatarColor(
+                                                    employee.id,
+                                                ),
                                             }}
                                         >
                                             {initials(employee.name)}
                                         </span>
                                     )}
                                     <span className="access-emp-info">
-                                        <span className="aei-name">{employee.name}</span>
-                                        <span className="aei-role">{employee.position}</span>
+                                        <span className="aei-name">
+                                            {employee.name}
+                                        </span>
+                                        <span className="aei-role">
+                                            {employee.position}
+                                        </span>
                                     </span>
                                 </button>
                             ))}
@@ -354,9 +548,19 @@ export default function AccessIndex({
                                         <div className="access-panel-role">
                                             {selectedEmployee.position}
                                         </div>
+                                        <div className="access-panel-status-note">
+                                            {draftPermission.is_deactivated
+                                                ? 'Аккаунт отключен: сотрудник не сможет войти в кабинет и потеряет доступ к базе знаний.'
+                                                : 'Аккаунт активен: статус сотрудника и доступ в кабинет синхронизируются с экраном сотрудников.'}
+                                        </div>
                                     </div>
 
                                     <div className="access-panel-actions">
+                                        {saveNotice ? (
+                                            <div className="access-save-notice">
+                                                {saveNotice}
+                                            </div>
+                                        ) : null}
                                         <button
                                             type="button"
                                             className={`access-deactivate-btn ${
@@ -364,13 +568,19 @@ export default function AccessIndex({
                                                     ? 'is-active'
                                                     : ''
                                             }`}
-                                            onClick={() =>
-                                                setDraftPermission((current) => ({
-                                                    ...current,
-                                                    is_deactivated:
-                                                        !current.is_deactivated,
-                                                }))
+                                            disabled={
+                                                !selectedEmployee.can_toggle_status
                                             }
+                                            onClick={() => {
+                                                setSaveNotice(null);
+                                                setDraftPermission(
+                                                    (current) => ({
+                                                        ...current,
+                                                        is_deactivated:
+                                                            !current.is_deactivated,
+                                                    }),
+                                                );
+                                            }}
                                         >
                                             {draftPermission.is_deactivated
                                                 ? 'Активировать'
@@ -383,13 +593,17 @@ export default function AccessIndex({
                                             disabled={isSaving}
                                         >
                                             <Save className="size-3.5" />
-                                            {isSaving ? 'Сохраняем...' : 'Сохранить'}
+                                            {isSaving
+                                                ? 'Сохраняем...'
+                                                : 'Сохранить'}
                                         </button>
                                     </div>
                                 </div>
 
                                 <section className="access-block">
-                                    <div className="access-block-title">Права действий</div>
+                                    <div className="access-block-title">
+                                        Права действий
+                                    </div>
                                     <div className="access-block-desc">
                                         Что сотрудник может делать в базе знаний
                                     </div>
@@ -401,10 +615,12 @@ export default function AccessIndex({
                                             hint="Видит базу знаний и статьи в разрешенных разделах"
                                             checked={draftPermission.can_view}
                                             onChange={(checked) =>
-                                                setDraftPermission((current) => ({
-                                                    ...current,
-                                                    can_view: checked,
-                                                }))
+                                                patchDraftPermission(
+                                                    (current) => ({
+                                                        ...current,
+                                                        can_view: checked,
+                                                    }),
+                                                )
                                             }
                                         />
                                         <ToggleRow
@@ -413,10 +629,12 @@ export default function AccessIndex({
                                             hint="Может создавать новые статьи в доступных разделах"
                                             checked={draftPermission.can_create}
                                             onChange={(checked) =>
-                                                setDraftPermission((current) => ({
-                                                    ...current,
-                                                    can_create: checked,
-                                                }))
+                                                patchDraftPermission(
+                                                    (current) => ({
+                                                        ...current,
+                                                        can_create: checked,
+                                                    }),
+                                                )
                                             }
                                         />
                                         <ToggleRow
@@ -425,10 +643,12 @@ export default function AccessIndex({
                                             hint="Может редактировать статьи, но не удалять их"
                                             checked={draftPermission.can_update}
                                             onChange={(checked) =>
-                                                setDraftPermission((current) => ({
-                                                    ...current,
-                                                    can_update: checked,
-                                                }))
+                                                patchDraftPermission(
+                                                    (current) => ({
+                                                        ...current,
+                                                        can_update: checked,
+                                                    }),
+                                                )
                                             }
                                         />
                                         <ToggleRow
@@ -437,98 +657,135 @@ export default function AccessIndex({
                                             hint="Может удалять статьи в рамках своей зоны доступа"
                                             checked={draftPermission.can_delete}
                                             onChange={(checked) =>
-                                                setDraftPermission((current) => ({
-                                                    ...current,
-                                                    can_delete: checked,
-                                                }))
+                                                patchDraftPermission(
+                                                    (current) => ({
+                                                        ...current,
+                                                        can_delete: checked,
+                                                    }),
+                                                )
                                             }
                                         />
                                         <ToggleRow
-                                            icon={<FileText className="size-4" />}
+                                            icon={
+                                                <FileText className="size-4" />
+                                            }
                                             title="Просмотр всех статей"
                                             hint="Если выключить, ниже можно выбрать конкретные статьи"
-                                            checked={draftPermission.view_all_articles}
-                                            onChange={(checked) =>
-                                                setDraftPermission((current) => ({
-                                                    ...current,
-                                                    view_all_articles: checked,
-                                                }))
+                                            checked={
+                                                draftPermission.view_all_articles
                                             }
+                                            onChange={toggleViewAllArticles}
                                         />
                                     </div>
                                 </section>
 
                                 <section className="access-block">
-                                    <div className="access-block-title">Доступ к разделам</div>
+                                    <div className="access-block-title">
+                                        Доступ к разделам
+                                    </div>
                                     <div className="access-block-desc">
                                         Какие разделы видит сотрудник
                                     </div>
 
                                     <div className="access-tree">
-                                        {groupedCategories.map(({ root, children }) => (
-                                            <div
-                                                key={root.id}
-                                                className="access-root-cat"
-                                            >
-                                                <div className="access-root-head">
-                                                    <KnowledgeBaseIcon
-                                                        icon={root.icon ?? ''}
-                                                        imageUrl={root.icon_image_url}
-                                                        className="access-root-emoji"
-                                                        imageClassName="access-root-image"
-                                                    />
-                                                    <span className="access-root-name">
-                                                        {root.name}
-                                                    </span>
-                                                    <span className="access-badge-count">
-                                                        {root.articles_count} ст.
-                                                    </span>
-                                                    <AccessSwitch
-                                                        checked={categoryIds.has(root.id)}
-                                                        label={`Р”РѕСЃС‚СѓРї Рє СЂР°Р·РґРµР»Сѓ ${root.name}`}
-                                                        onChange={(checked) =>
-                                                            toggleCategory(root.id, checked)
-                                                        }
-                                                    />
-                                                </div>
+                                        {groupedCategories.map(
+                                            ({ root, children }) => (
+                                                <div
+                                                    key={root.id}
+                                                    className="access-root-cat"
+                                                >
+                                                    <div className="access-root-head">
+                                                        <KnowledgeBaseIcon
+                                                            icon={
+                                                                root.icon ?? ''
+                                                            }
+                                                            imageUrl={
+                                                                root.icon_image_url
+                                                            }
+                                                            className="access-root-emoji"
+                                                            imageClassName="access-root-image"
+                                                        />
+                                                        <span className="access-root-name">
+                                                            {root.name}
+                                                        </span>
+                                                        <span className="access-badge-count">
+                                                            {
+                                                                root.articles_count
+                                                            }{' '}
+                                                            ст.
+                                                        </span>
+                                                        <AccessSwitch
+                                                            checked={
+                                                                categoryIds.has(
+                                                                    root.id,
+                                                                )
+                                                            }
+                                                            label={`Р”РѕСЃС‚СѓРї Рє СЂР°Р·РґРµР»Сѓ ${root.name}`}
+                                                            onChange={(
+                                                                checked,
+                                                            ) =>
+                                                                toggleCategory(
+                                                                    root.id,
+                                                                    checked,
+                                                                )
+                                                            }
+                                                        />
+                                                    </div>
 
-                                                <div className="access-subcats">
-                                                    {children.map((category) => (
-                                                        <div
-                                                            key={category.id}
-                                                            className="access-row"
-                                                        >
-                                                            <KnowledgeBaseIcon
-                                                                icon={category.icon ?? ''}
-                                                                imageUrl={
-                                                                    category.icon_image_url
-                                                                }
-                                                                className="access-row-emoji"
-                                                                imageClassName="access-row-image"
-                                                            />
-                                                            <span className="access-row-name">
-                                                                {category.name}
-                                                            </span>
-                                                            <span className="access-badge-count">
-                                                                {category.articles_count} ст.
-                                                            </span>
-                                                            <AccessSwitch
-                                                                checked={categoryIds.has(
-                                                                    category.id,
-                                                                )}
-                                                                label={`Р”РѕСЃС‚СѓРї Рє СЂР°Р·РґРµР»Сѓ ${category.name}`}
-                                                                onChange={(checked) =>
-                                                                    toggleCategory(
-                                                                        category.id,
-                                                                        checked,
-                                                                    )
-                                                                }
-                                                            />
-                                                        </div>
-                                                    ))}
+                                                    <div className="access-subcats">
+                                                        {children.map(
+                                                            (category) => (
+                                                                <div
+                                                                    key={
+                                                                        category.id
+                                                                    }
+                                                                    className="access-row"
+                                                                >
+                                                                    <KnowledgeBaseIcon
+                                                                        icon={
+                                                                            category.icon ??
+                                                                            ''
+                                                                        }
+                                                                        imageUrl={
+                                                                            category.icon_image_url
+                                                                        }
+                                                                        className="access-row-emoji"
+                                                                        imageClassName="access-row-image"
+                                                                    />
+                                                                    <span className="access-row-name">
+                                                                        {
+                                                                            category.name
+                                                                        }
+                                                                    </span>
+                                                                    <span className="access-badge-count">
+                                                                        {
+                                                                            category.articles_count
+                                                                        }{' '}
+                                                                        ст.
+                                                                    </span>
+                                                                    <AccessSwitch
+                                                                        checked={
+                                                                            categoryIds.has(
+                                                                                category.id,
+                                                                            )
+                                                                        }
+                                                                        label={`Р”РѕСЃС‚СѓРї Рє СЂР°Р·РґРµР»Сѓ ${category.name}`}
+                                                                        onChange={(
+                                                                            checked,
+                                                                        ) =>
+                                                                            toggleCategory(
+                                                                                category.id,
+                                                                                checked,
+                                                                            )
+                                                                        }
+                                                                    />
+                                                                </div>
+                                                            ),
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ))}
+                                            ),
+                                        )}
                                     </div>
                                 </section>
 
@@ -538,35 +795,44 @@ export default function AccessIndex({
                                             Доступ к отдельным статьям
                                         </div>
                                         <div className="access-block-desc">
-                                            Этот список работает только когда выключен просмотр всех статей
+                                            Этот список работает только когда
+                                            выключен просмотр всех статей
                                         </div>
 
                                         <div className="access-articles-list">
                                             {categories.flatMap((category) =>
-                                                category.articles.map((article) => (
-                                                    <div
-                                                        key={article.id}
-                                                        className="access-row access-row--article"
-                                                    >
-                                                        <FileText className="size-4" />
-                                                        <span className="access-row-name">
-                                                            {article.title}
-                                                        </span>
-                                                        <span className="access-badge-count">
-                                                            {category.name}
-                                                        </span>
-                                                        <AccessSwitch
-                                                            checked={articleIds.has(article.id)}
-                                                            label={`Р”РѕСЃС‚СѓРї Рє СЃС‚Р°С‚СЊРµ ${article.title}`}
-                                                            onChange={(checked) =>
-                                                                toggleArticle(
-                                                                    article.id,
+                                                category.articles.map(
+                                                    (article) => (
+                                                        <div
+                                                            key={article.id}
+                                                            className="access-row access-row--article"
+                                                        >
+                                                            <FileText className="size-4" />
+                                                            <span className="access-row-name">
+                                                                {article.title}
+                                                            </span>
+                                                            <span className="access-badge-count">
+                                                                {category.name}
+                                                            </span>
+                                                            <AccessSwitch
+                                                                checked={
+                                                                    articleIds.has(
+                                                                        article.id,
+                                                                    )
+                                                                }
+                                                                label={`Р”РѕСЃС‚СѓРї Рє СЃС‚Р°С‚СЊРµ ${article.title}`}
+                                                                onChange={(
                                                                     checked,
-                                                                )
-                                                            }
-                                                        />
-                                                    </div>
-                                                )),
+                                                                ) =>
+                                                                    toggleArticle(
+                                                                        article.id,
+                                                                        checked,
+                                                                    )
+                                                                }
+                                                            />
+                                                        </div>
+                                                    ),
+                                                ),
                                             )}
                                         </div>
                                     </section>
@@ -574,7 +840,8 @@ export default function AccessIndex({
                             </>
                         ) : (
                             <div className="access-empty-state">
-                                Сначала добавьте сотрудника, потом настройте права.
+                                Сначала добавьте сотрудника, потом настройте
+                                права.
                             </div>
                         )}
                     </main>

@@ -40,7 +40,7 @@ class EmployeeAssetsTest extends TestCase
         $employee->refresh();
 
         $this->assertNotNull($employee->photo_url);
-        $this->assertStringStartsWith('/storage/employees/', $employee->photo_url);
+        $this->assertStringStartsWith('/media/employees/', $employee->photo_url);
     }
 
     public function test_admin_can_upload_and_delete_employee_file(): void

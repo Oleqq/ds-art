@@ -7,13 +7,15 @@ import type { EmployeeFile } from '@/features/employees/types';
 import { formatUploadedAt } from '@/features/employees/utils';
 
 export function EmployeeFilesCard({
-    employeeId,
     files,
     readonly = true,
+    uploadUrl,
+    deleteUrl,
 }: {
-    employeeId: number;
     files: EmployeeFile[];
     readonly?: boolean;
+    uploadUrl?: string | null;
+    deleteUrl?: ((fileId: number) => string) | null;
 }) {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const [pendingName, setPendingName] = useState('');
@@ -47,7 +49,11 @@ export function EmployeeFilesCard({
     };
 
     const submitUpload = () => {
-        uploadForm.post(`/admin/employees/${employeeId}/files`, {
+        if (!uploadUrl) {
+            return;
+        }
+
+        uploadForm.post(uploadUrl, {
             preserveScroll: true,
             forceFormData: true,
             onSuccess: () => {
@@ -57,8 +63,12 @@ export function EmployeeFilesCard({
     };
 
     const deleteFile = (fileId: number) => {
+        if (!deleteUrl) {
+            return;
+        }
+
         setDeletingId(fileId);
-        uploadForm.delete(`/admin/employees/${employeeId}/files/${fileId}`, {
+        uploadForm.delete(deleteUrl(fileId), {
             preserveScroll: true,
             onFinish: () => setDeletingId(null),
         });
@@ -149,7 +159,7 @@ export function EmployeeFilesCard({
                     </div>
                 )}
 
-                {readonly ? null : (
+                {readonly || !uploadUrl || !deleteUrl ? null : (
                     <div className="file-upload mt-4 text-sm text-muted-foreground">
                         <input
                             ref={fileInputRef}

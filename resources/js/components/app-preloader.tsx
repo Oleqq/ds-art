@@ -1,8 +1,16 @@
 import { router } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
+import AppLogoIcon from '@/components/app-logo-icon';
 
 const SHOW_DELAY = 120;
 const HIDE_DELAY = 220;
+
+function isPrefetchVisit(event: unknown) {
+    return Boolean(
+        (event as { detail?: { visit?: { prefetch?: boolean } } })?.detail
+            ?.visit?.prefetch,
+    );
+}
 
 export function AppPreloader() {
     const [isVisible, setIsVisible] = useState(false);
@@ -24,7 +32,11 @@ export function AppPreloader() {
             }
         };
 
-        const start = router.on('start', () => {
+        const start = router.on('start', (event) => {
+            if (isPrefetchVisit(event)) {
+                return;
+            }
+
             clearShowTimer();
             clearHideTimer();
 
@@ -33,7 +45,11 @@ export function AppPreloader() {
             }, SHOW_DELAY);
         });
 
-        const finish = router.on('finish', () => {
+        const finish = router.on('finish', (event) => {
+            if (isPrefetchVisit(event)) {
+                return;
+            }
+
             clearShowTimer();
             clearHideTimer();
 
@@ -42,7 +58,11 @@ export function AppPreloader() {
             }, HIDE_DELAY);
         });
 
-        const cancel = router.on('cancel', () => {
+        const cancel = router.on('cancel', (event) => {
+            if (isPrefetchVisit(event)) {
+                return;
+            }
+
             clearShowTimer();
             clearHideTimer();
             setIsVisible(false);
@@ -58,17 +78,17 @@ export function AppPreloader() {
     }, []);
 
     return (
-        <div className={`app-preloader ${isVisible ? 'is-active' : ''}`} aria-hidden={!isVisible}>
-            <div className="app-preloader__bar" />
-
-            <div className="app-preloader__badge" role="status" aria-live="polite">
-                <span className="app-preloader__mark">SC</span>
-                <span className="app-preloader__text">Загружаем раздел</span>
-                <span className="app-preloader__dots" aria-hidden="true">
-                    <span />
-                    <span />
-                    <span />
+        <div
+            className={`app-preloader ${isVisible ? 'is-active' : ''}`}
+            aria-hidden={!isVisible}
+        >
+            <div className="app-preloader__center" role="status" aria-live="polite">
+                <span className="app-preloader__orbit app-preloader__orbit--outer" />
+                <span className="app-preloader__orbit app-preloader__orbit--inner" />
+                <span className="app-preloader__core">
+                    <AppLogoIcon alt="" className="app-preloader__logo" />
                 </span>
+                <span className="sr-only">Loading</span>
             </div>
         </div>
     );

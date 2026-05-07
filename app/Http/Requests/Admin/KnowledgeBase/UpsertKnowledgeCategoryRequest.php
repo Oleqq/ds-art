@@ -26,6 +26,10 @@ class UpsertKnowledgeCategoryRequest extends FormRequest
             'return_to' => trim((string) $this->input('return_to')),
             'clear_icon_image' => $this->boolean('clear_icon_image'),
             'clear_cover' => $this->boolean('clear_cover'),
+            'cover_position_x' => $this->integer('cover_position_x', 50),
+            'cover_position_y' => $this->integer('cover_position_y', 50),
+            'cover_zoom_percent' => $this->integer('cover_zoom_percent', 100),
+            'cover_height_px' => $this->integer('cover_height_px', 220),
             'is_visible_to_employees' => $this->boolean('is_visible_to_employees', true),
         ]);
     }
@@ -40,6 +44,10 @@ class UpsertKnowledgeCategoryRequest extends FormRequest
             'icon' => ['nullable', 'string', 'max:32'],
             'icon_upload' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,gif,svg', 'max:2048'],
             'cover' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,gif,svg', 'max:5120'],
+            'cover_position_x' => ['nullable', 'integer', 'between:0,100'],
+            'cover_position_y' => ['nullable', 'integer', 'between:0,100'],
+            'cover_zoom_percent' => ['nullable', 'integer', 'between:100,200'],
+            'cover_height_px' => ['nullable', 'integer', 'between:160,520'],
             'parent_id' => [
                 'nullable',
                 'integer',
@@ -72,5 +80,15 @@ class UpsertKnowledgeCategoryRequest extends FormRequest
         }
 
         return $returnTo;
+    }
+
+    public function coverPresentationData(): array
+    {
+        return [
+            'vx' => $this->integer('cover_position_x', 50),
+            'vy' => $this->integer('cover_position_y', 50),
+            'vz' => $this->integer('cover_zoom_percent', 100),
+            'vh' => $this->integer('cover_height_px', 220),
+        ];
     }
 }

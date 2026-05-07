@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Support\PublicStorageAsset;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -29,6 +31,20 @@ class KnowledgeCategory extends Model
         return [
             'is_visible_to_employees' => 'boolean',
         ];
+    }
+
+    protected function iconImageUrl(): Attribute
+    {
+        return Attribute::make(
+            get: static fn (?string $value): ?string => PublicStorageAsset::normalize($value),
+        );
+    }
+
+    protected function coverUrl(): Attribute
+    {
+        return Attribute::make(
+            get: static fn (?string $value): ?string => PublicStorageAsset::normalize($value),
+        );
     }
 
     public function getRouteKeyName(): string

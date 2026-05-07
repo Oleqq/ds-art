@@ -1,5 +1,12 @@
 import { Link } from '@inertiajs/react';
-import { Check, PencilLine, Plus, SmilePlus, Trash2, Upload, X } from 'lucide-react';
+import {
+    Check,
+    PencilLine,
+    Plus,
+    SmilePlus,
+    Trash2,
+    Upload,
+} from 'lucide-react';
 import {
     type DragEvent,
     type KeyboardEvent,
@@ -12,6 +19,7 @@ import {
 import { ConfirmModal } from '@/components/confirm-modal';
 import { KnowledgeBaseIcon } from '@/features/knowledge-base/components/knowledge-base-icon';
 import { KnowledgeBaseIconPicker } from '@/features/knowledge-base/components/knowledge-base-icon-picker';
+import { KnowledgeBaseMetaTrigger } from '@/features/knowledge-base/components/knowledge-base-meta-trigger';
 import type { KnowledgeBaseHomeCategory } from '@/features/knowledge-base/types';
 import { cn } from '@/lib/utils';
 
@@ -31,14 +39,62 @@ function formatHomeCardMeta(category: KnowledgeBaseHomeCategory) {
     return 'Пусто';
 }
 
+function buildMetaRows(item: {
+    author_name: string | null;
+    updated_by_name: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+}) {
+    const rows: Array<{
+        label: string;
+        value: string;
+        tone: 'author' | 'created' | 'updated';
+    }> = [];
+
+    if (item.author_name) {
+        rows.push({
+            label: 'Автор',
+            value: item.author_name,
+            tone: 'author',
+        });
+    }
+
+    if (item.created_at) {
+        rows.push({
+            label: 'Создано',
+            value: item.created_at,
+            tone: 'created',
+        });
+    }
+
+    if (item.updated_at) {
+        rows.push({
+            label: item.updated_by_name ? 'Обновил' : 'Обновлено',
+            value: item.updated_by_name
+                ? `${item.updated_by_name} · ${item.updated_at}`
+                : item.updated_at,
+            tone: 'updated',
+        });
+    }
+
+    return rows;
+}
+
 function isInteractiveElement(target: EventTarget | null) {
     return (
         target instanceof HTMLElement &&
-        Boolean(target.closest('a, button, input, textarea, select, [data-kb-no-card-select]'))
+        Boolean(
+            target.closest(
+                'a, button, input, textarea, select, [data-kb-no-card-select]',
+            ),
+        )
     );
 }
 
-function handleSelectableKeyDown(event: KeyboardEvent<HTMLElement>, onToggle: () => void) {
+function handleSelectableKeyDown(
+    event: KeyboardEvent<HTMLElement>,
+    onToggle: () => void,
+) {
     if (isInteractiveElement(event.target)) {
         return;
     }
@@ -49,7 +105,11 @@ function handleSelectableKeyDown(event: KeyboardEvent<HTMLElement>, onToggle: ()
     }
 }
 
-function reorderById<T extends { id: number }>(items: T[], draggedId: number, targetId: number) {
+function reorderById<T extends { id: number }>(
+    items: T[],
+    draggedId: number,
+    targetId: number,
+) {
     const fromIndex = items.findIndex((item) => item.id === draggedId);
     const toIndex = items.findIndex((item) => item.id === targetId);
 
@@ -65,9 +125,11 @@ function reorderById<T extends { id: number }>(items: T[], draggedId: number, ta
 }
 
 function withViewTransition(update: () => void) {
-    const viewTransition = (document as Document & {
-        startViewTransition?: (callback: () => void) => void;
-    }).startViewTransition;
+    const viewTransition = (
+        document as Document & {
+            startViewTransition?: (callback: () => void) => void;
+        }
+    ).startViewTransition;
 
     if (viewTransition) {
         viewTransition(update);
@@ -136,8 +198,13 @@ function HomeCategoryCard({
     }, [isRenaming]);
 
     const visibleTags = category.preview_subcategories.slice(0, 3);
-    const hiddenTagsCount = Math.max(0, category.subcategories_count - visibleTags.length);
-
+    const hiddenTagsCount = Math.max(
+        0,
+        category.subcategories_count - visibleTags.length,
+    );
+    const isEmpty =
+        category.subcategories_count === 0 && category.articles_count === 0;
+    const metaRows = buildMetaRows(category);
     const commitRename = () => {
         const normalized = nameDraft.trim();
 
@@ -191,19 +258,30 @@ function HomeCategoryCard({
                 </div>
             )}
 
-            <div className="kb-home__card-meta">{formatHomeCardMeta(category)}</div>
+            <div className="kb-card__meta-row">
+                <div className="kb-home__card-meta">
+                    {formatHomeCardMeta(category)}
+                </div>
+                <KnowledgeBaseMetaTrigger rows={metaRows} />
+            </div>
 
             {visibleTags.length > 0 ? (
                 <div className="kb-home__card-tags">
                     {visibleTags.map((item) => (
-                        <span key={item.id} className="kb-home__card-tag" title={item.name}>
+                        <span
+                            key={item.id}
+                            className="kb-home__card-tag"
+                            title={item.name}
+                        >
                             <KnowledgeBaseIcon
                                 icon={item.icon}
                                 imageUrl={item.icon_image_url}
                                 className="kb-home__tag-icon"
                                 imageClassName="kb-home__tag-icon-image"
                             />
-                            <span className="kb-home__card-tag-text">{item.name}</span>
+                            <span className="kb-home__card-tag-text">
+                                {item.name}
+                            </span>
                         </span>
                     ))}
 
@@ -219,7 +297,11 @@ function HomeCategoryCard({
 
     if (!editMode) {
         return (
-            <Link href={category.href} className="kb-home__card" title={category.name}>
+            <Link
+                href={category.href}
+                className={cn('kb-home__card', isEmpty && 'kb-card--empty')}
+                title={category.name}
+            >
                 <KnowledgeBaseIcon
                     icon={category.icon}
                     imageUrl={category.icon_image_url}
@@ -241,16 +323,25 @@ function HomeCategoryCard({
 
     return (
         <div
-            className={cn('kb-home__card kb-card--edit-mode', selected && 'is-selected')}
+            className={cn(
+                'kb-home__card kb-card--edit-mode',
+                selected && 'is-selected',
+                isEmpty && 'kb-card--empty',
+            )}
             style={{ animationDelay }}
             role="button"
             tabIndex={0}
             draggable
             onClick={handleCardClick}
-            onKeyDown={(event) => handleSelectableKeyDown(event, onToggleSelect)}
+            onKeyDown={(event) =>
+                handleSelectableKeyDown(event, onToggleSelect)
+            }
             onDragStart={(event) => {
                 event.dataTransfer.effectAllowed = 'move';
-                event.dataTransfer.setData('text/plain', `category:${category.id}`);
+                event.dataTransfer.setData(
+                    'text/plain',
+                    `category:${category.id}`,
+                );
                 onDragStart?.();
             }}
             onDragOver={onDragOver}
@@ -390,11 +481,24 @@ export function KnowledgeBaseHome({
     categories: KnowledgeBaseHomeCategory[];
     canManage?: boolean;
     onCreateCategory?: () => void;
-    onRenameCategory?: (category: KnowledgeBaseHomeCategory, name: string) => void | Promise<void>;
-    onChangeCategoryIcon?: (category: KnowledgeBaseHomeCategory, icon: string) => void | Promise<void>;
-    onUploadCategoryIcon?: (category: KnowledgeBaseHomeCategory, file: File) => void | Promise<void>;
-    onDeleteCategory?: (category: KnowledgeBaseHomeCategory) => void | Promise<void>;
-    onBulkDeleteCategories?: (categories: KnowledgeBaseHomeCategory[]) => void | Promise<void>;
+    onRenameCategory?: (
+        category: KnowledgeBaseHomeCategory,
+        name: string,
+    ) => void | Promise<void>;
+    onChangeCategoryIcon?: (
+        category: KnowledgeBaseHomeCategory,
+        icon: string,
+    ) => void | Promise<void>;
+    onUploadCategoryIcon?: (
+        category: KnowledgeBaseHomeCategory,
+        file: File,
+    ) => void | Promise<void>;
+    onDeleteCategory?: (
+        category: KnowledgeBaseHomeCategory,
+    ) => void | Promise<void>;
+    onBulkDeleteCategories?: (
+        categories: KnowledgeBaseHomeCategory[],
+    ) => void | Promise<void>;
     onReorderCategories?: (categoryIds: number[]) => void | Promise<void>;
 }) {
     const [isTileEditMode, setIsTileEditMode] = useState(false);
@@ -426,7 +530,9 @@ export function KnowledgeBaseHome({
 
     const toggleSelection = (id: number) => {
         setSelectedIds((current) =>
-            current.includes(id) ? current.filter((currentId) => currentId !== id) : [...current, id],
+            current.includes(id)
+                ? current.filter((currentId) => currentId !== id)
+                : [...current, id],
         );
     };
 
@@ -447,7 +553,9 @@ export function KnowledgeBaseHome({
         const next = reorderById(orderedCategories, draggedId, targetId);
         withViewTransition(() => setOrderedCategories(next));
         setDraggedId(null);
-        void Promise.resolve(onReorderCategories?.(next.map((item) => item.id)));
+        void Promise.resolve(
+            onReorderCategories?.(next.map((item) => item.id)),
+        );
     };
 
     const handleConfirmDelete = async () => {
@@ -461,7 +569,9 @@ export function KnowledgeBaseHome({
             if (deleteTarget.kind === 'single') {
                 await Promise.resolve(onDeleteCategory?.(deleteTarget.item));
             } else {
-                await Promise.resolve(onBulkDeleteCategories?.(selectedCategories));
+                await Promise.resolve(
+                    onBulkDeleteCategories?.(selectedCategories),
+                );
                 setSelectedIds([]);
             }
 
@@ -484,12 +594,17 @@ export function KnowledgeBaseHome({
                         <div className="flex flex-wrap gap-2 lg:ml-auto">
                             <button
                                 type="button"
-                                onClick={() => setIsTileEditMode((value) => !value)}
-                                className={cn('kb-atb-btn', isTileEditMode && 'kb-atb-btn--primary')}
+                                onClick={() =>
+                                    setIsTileEditMode((value) => !value)
+                                }
+                                className={cn(
+                                    'kb-atb-btn',
+                                    isTileEditMode && 'kb-atb-btn--primary',
+                                )}
                             >
                                 {isTileEditMode ? (
                                     <>
-                                        <X className="size-4" />
+                                        <Check className="size-4" />
                                         Готово
                                     </>
                                 ) : (
@@ -514,7 +629,9 @@ export function KnowledgeBaseHome({
 
                 {canManage && isTileEditMode ? (
                     <div className="kb-tile-edit-bar">
-                        <div className="kb-tile-edit-bar__title">Редактирование разделов</div>
+                        <div className="kb-tile-edit-bar__title">
+                            Редактирование разделов
+                        </div>
                         <div className="kb-tile-edit-bar__meta">
                             {selectedCategories.length > 0
                                 ? `Выбрано ${selectedCategories.length}: ${sectionSelectionNoun(selectedCategories.length)}`
@@ -526,7 +643,9 @@ export function KnowledgeBaseHome({
                                 <button
                                     type="button"
                                     className="kb-atb-btn kb-atb-btn--danger"
-                                    onClick={() => setDeleteTarget({ kind: 'selection' })}
+                                    onClick={() =>
+                                        setDeleteTarget({ kind: 'selection' })
+                                    }
                                 >
                                     <Trash2 className="size-4" />
                                     Удалить выбранное
@@ -547,7 +666,8 @@ export function KnowledgeBaseHome({
                 <div className="kb-home__grid">
                     {orderedCategories.length === 0 ? (
                         <div className="kb-home__empty">
-                            Разделы еще не созданы. Создайте первый раздел, чтобы начать наполнять базу знаний.
+                            Разделы еще не созданы. Создайте первый раздел,
+                            чтобы начать наполнять базу знаний.
                         </div>
                     ) : (
                         orderedCategories.map((category, index) => (
@@ -557,11 +677,15 @@ export function KnowledgeBaseHome({
                                 editMode={canManage && isTileEditMode}
                                 selected={selectedIds.includes(category.id)}
                                 animationDelay={`${(index % 6) * 0.09}s`}
-                                onToggleSelect={() => toggleSelection(category.id)}
+                                onToggleSelect={() =>
+                                    toggleSelection(category.id)
+                                }
                                 onRename={onRenameCategory}
                                 onChangeIcon={onChangeCategoryIcon}
                                 onUploadIcon={onUploadCategoryIcon}
-                                onDelete={(item) => setDeleteTarget({ kind: 'single', item })}
+                                onDelete={(item) =>
+                                    setDeleteTarget({ kind: 'single', item })
+                                }
                                 onDragStart={() => setDraggedId(category.id)}
                                 onDragOver={handleDragOver}
                                 onDrop={() => handleDrop(category.id)}
@@ -574,15 +698,23 @@ export function KnowledgeBaseHome({
 
             <ConfirmModal
                 open={deleteTarget !== null}
-                title={deleteTarget?.kind === 'selection' ? 'Удалить выбранные разделы' : 'Удалить раздел'}
+                title={
+                    deleteTarget?.kind === 'selection'
+                        ? 'Удалить выбранные разделы'
+                        : 'Удалить раздел'
+                }
                 description={
                     deleteTarget?.kind === 'selection'
-                        ? `Будут удалены ${selectedCategories.length} выбранных разделов.`
+                        ? `Будут удалены ${selectedCategories.length} выбранных разделов вместе со всем вложенным содержимым.`
                         : deleteTarget?.kind === 'single'
-                          ? `Раздел «${deleteTarget.item.name}» будет удален без возможности восстановления.`
+                          ? `Раздел «${deleteTarget.item.name}» будет удален вместе со всем вложенным содержимым без возможности восстановления.`
                           : ''
                 }
-                confirmLabel={deleteTarget?.kind === 'selection' ? 'Удалить выбранное' : 'Удалить'}
+                confirmLabel={
+                    deleteTarget?.kind === 'selection'
+                        ? 'Удалить выбранное'
+                        : 'Удалить'
+                }
                 danger
                 processing={isDeleting}
                 onConfirm={handleConfirmDelete}

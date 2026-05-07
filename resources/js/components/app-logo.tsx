@@ -1,11 +1,18 @@
 export default function AppLogo() {
     return (
-        <>
-            <div className="ml-1 grid flex-1 text-left text-sm">
-                <span className="truncate text-[13px] leading-tight font-semibold tracking-[0.08em] text-[var(--primary)] uppercase">
-                    Staff Cabinet
-                </span>
-            </div>
-        </>
+        <div className="app-logo">
+            <span className="app-logo__mark" aria-hidden="true">
+                <img
+                    src="/dsart-logo.webp"
+                    alt=""
+                    className="app-logo__image"
+                    draggable={false}
+                />
+            </span>
+            <span className="app-logo__text">
+                <span className="app-logo__name">DS Art</span>
+                <span className="app-logo__caption">База сотрудников</span>
+            </span>
+        </div>
     );
 }

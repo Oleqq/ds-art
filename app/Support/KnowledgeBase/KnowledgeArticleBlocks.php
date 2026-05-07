@@ -2,6 +2,8 @@
 
 namespace App\Support\KnowledgeBase;
 
+use App\Support\PublicStorageAsset;
+
 class KnowledgeArticleBlocks
 {
     public static function fromStored(?array $blocks, ?string $fallbackText = null): array
@@ -62,7 +64,10 @@ class KnowledgeArticleBlocks
 
             if ($normalized['type'] === 'table') {
                 foreach ($normalized['rows'] ?? [] as $row) {
-                    $parts[] = implode(' ', array_map('trim', $row));
+                    $parts[] = implode(' ', array_map(
+                        fn ($cell) => trim(strip_tags((string) $cell)),
+                        $row,
+                    ));
                 }
 
                 continue;
@@ -116,19 +121,29 @@ class KnowledgeArticleBlocks
             'image' => [
                 'id' => $id,
                 'type' => $type,
-                'url' => (string) ($block['url'] ?? ''),
+                'url' => (string) (PublicStorageAsset::normalize((string) ($block['url'] ?? '')) ?? ''),
                 'caption' => (string) ($block['caption'] ?? ''),
+                'width_percent' => self::normalizeMediaWidth($block['width_percent'] ?? null),
+                'height_px' => self::normalizeMediaHeight($block['height_px'] ?? null),
+                'focus_x' => self::normalizePercent($block['focus_x'] ?? null, 50),
+                'focus_y' => self::normalizePercent($block['focus_y'] ?? null, 50),
+                'zoom_percent' => self::normalizeZoom($block['zoom_percent'] ?? null),
             ],
             'video' => [
                 'id' => $id,
                 'type' => $type,
-                'url' => (string) ($block['url'] ?? ''),
+                'url' => (string) (PublicStorageAsset::normalize((string) ($block['url'] ?? '')) ?? ''),
                 'caption' => (string) ($block['caption'] ?? ''),
+                'width_percent' => self::normalizeMediaWidth($block['width_percent'] ?? null),
+                'height_px' => self::normalizeMediaHeight($block['height_px'] ?? null),
+                'focus_x' => self::normalizePercent($block['focus_x'] ?? null, 50),
+                'focus_y' => self::normalizePercent($block['focus_y'] ?? null, 50),
+                'zoom_percent' => self::normalizeZoom($block['zoom_percent'] ?? null),
             ],
             'file' => [
                 'id' => $id,
                 'type' => $type,
-                'url' => (string) ($block['url'] ?? ''),
+                'url' => (string) (PublicStorageAsset::normalize((string) ($block['url'] ?? '')) ?? ''),
                 'name' => (string) ($block['name'] ?? ''),
                 'size_label' => (string) ($block['size_label'] ?? ''),
                 'caption' => (string) ($block['caption'] ?? ''),
@@ -137,6 +152,14 @@ class KnowledgeArticleBlocks
                 'id' => $id,
                 'type' => $type,
                 'rows' => self::normalizeRows($block['rows'] ?? null),
+                'column_widths' => self::normalizeColumnWidths(
+                    $block['column_widths'] ?? null,
+                    self::normalizeRows($block['rows'] ?? null),
+                ),
+                'row_heights' => self::normalizeRowHeights(
+                    $block['row_heights'] ?? null,
+                    self::normalizeRows($block['rows'] ?? null),
+                ),
             ],
             'link' => [
                 'id' => $id,
@@ -167,5 +190,107 @@ class KnowledgeArticleBlocks
             fn ($row) => array_values(array_map(fn ($cell) => (string) $cell, is_array($row) ? $row : [])),
             $rows,
         ));
+    }
+
+    private static function normalizeColumnWidths(mixed $widths, array $rows): array
+    {
+        $columnCount = 0;
+
+        foreach ($rows as $row) {
+            $columnCount = max($columnCount, count($row));
+        }
+
+        if ($columnCount <= 0) {
+            return [];
+        }
+
+        $normalized = array_fill(0, $columnCount, 220);
+
+        if (! is_array($widths)) {
+            return $normalized;
+        }
+
+        foreach (array_slice(array_values($widths), 0, $columnCount) as $index => $width) {
+            $value = (int) $width;
+
+            if ($value >= 120 && $value <= 720) {
+                $normalized[$index] = $value;
+            }
+        }
+
+        return $normalized;
+    }
+
+    private static function normalizeRowHeights(mixed $heights, array $rows): array
+    {
+        $rowCount = count($rows);
+
+        if ($rowCount <= 0) {
+            return [];
+        }
+
+        $normalized = array_fill(0, $rowCount, 56);
+
+        if (! is_array($heights)) {
+            return $normalized;
+        }
+
+        foreach (array_slice(array_values($heights), 0, $rowCount) as $index => $height) {
+            $value = (int) $height;
+
+            if ($value >= 42 && $value <= 280) {
+                $normalized[$index] = $value;
+            }
+        }
+
+        return $normalized;
+    }
+
+    private static function normalizeMediaWidth(mixed $width): int
+    {
+        $value = (int) $width;
+
+        if (! in_array($value, [50, 75, 100], true)) {
+            return 100;
+        }
+
+        return $value;
+    }
+
+    private static function normalizePercent(mixed $value, int $fallback): int
+    {
+        $normalized = (int) $value;
+
+        if ($normalized < 0 || $normalized > 100) {
+            return $fallback;
+        }
+
+        return $normalized;
+    }
+
+    private static function normalizeMediaHeight(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $normalized = (int) $value;
+
+        if ($normalized < 160 || $normalized > 520) {
+            return null;
+        }
+
+        return $normalized;
+    }
+
+    private static function normalizeZoom(mixed $value): int
+    {
+        $normalized = (int) $value;
+
+        if ($normalized < 100 || $normalized > 200) {
+            return 100;
+        }
+
+        return $normalized;
     }
 }

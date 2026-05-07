@@ -30,6 +30,10 @@ export type KnowledgeBaseHomeCategory = {
     href: string;
     subcategories_count: number;
     articles_count: number;
+    author_name: string | null;
+    updated_by_name: string | null;
+    created_at: string | null;
+    updated_at: string | null;
     preview_subcategories: Array<{
         id: number;
         name: string;
@@ -50,6 +54,10 @@ export type KnowledgeBaseCategoryCard = {
     can_delete: boolean;
     href: string;
     materials_count: number;
+    author_name: string | null;
+    updated_by_name: string | null;
+    created_at: string | null;
+    updated_at: string | null;
 };
 
 export type KnowledgeBaseArticleCard = {
@@ -66,6 +74,10 @@ export type KnowledgeBaseArticleCard = {
     can_update: boolean;
     can_delete: boolean;
     can_duplicate: boolean;
+    author_name: string | null;
+    updated_by_name: string | null;
+    created_at: string | null;
+    updated_at: string | null;
 };
 
 export type KnowledgeBaseCategoryFormPayload = {
@@ -76,6 +88,10 @@ export type KnowledgeBaseCategoryFormPayload = {
     clear_icon_image: boolean;
     cover_url: string;
     cover: File | null;
+    cover_position_x: number;
+    cover_position_y: number;
+    cover_zoom_percent: number;
+    cover_height_px: number;
     clear_cover: boolean;
     parent_id: number | null;
     is_visible_to_employees: boolean;
@@ -92,6 +108,10 @@ export type KnowledgeBaseCategoryRecord = {
     cover_url: string | null;
     is_visible_to_employees: boolean;
     materials_count: number;
+    author_name: string | null;
+    updated_by_name: string | null;
+    created_at: string | null;
+    updated_at: string | null;
     subcategories: KnowledgeBaseCategoryCard[];
     articles: KnowledgeBaseArticleCard[];
 };
@@ -110,6 +130,9 @@ export type KnowledgeBaseArticleRecord = {
     scheduled_publish_at: string | null;
     tags: string[];
     access_level: string;
+    author_name: string | null;
+    updated_by_name: string | null;
+    created_at: string | null;
     updated_at: string | null;
     href: string;
     category: {
@@ -158,6 +181,11 @@ export type KnowledgeBaseArticleBlock =
           type: 'image' | 'video';
           url: string;
           caption: string;
+          width_percent?: number;
+          height_px?: number;
+          focus_x?: number;
+          focus_y?: number;
+          zoom_percent?: number;
       }
     | {
           id: string;
@@ -171,6 +199,8 @@ export type KnowledgeBaseArticleBlock =
           id: string;
           type: 'table';
           rows: string[][];
+          column_widths?: number[];
+          row_heights?: number[];
       }
     | {
           id: string;
@@ -192,6 +222,10 @@ export type KnowledgeBaseArticleFormPayload = {
     blocks: string;
     cover: File | null;
     cover_url: string;
+    cover_position_x: number;
+    cover_position_y: number;
+    cover_zoom_percent: number;
+    cover_height_px: number;
     clear_cover: boolean;
     is_published: boolean;
     scheduled_publish_at: string | null;

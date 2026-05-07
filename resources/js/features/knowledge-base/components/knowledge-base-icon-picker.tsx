@@ -135,7 +135,7 @@ export function KnowledgeBaseIconPicker({
             }
         };
 
-        const handlePointerDown = (event: MouseEvent) => {
+        const handlePointerDown = (event: PointerEvent) => {
             const target = event.target as Node | null;
 
             if (panelRef.current?.contains(target) || anchorEl?.contains(target)) {
@@ -146,12 +146,12 @@ export function KnowledgeBaseIconPicker({
         };
 
         window.addEventListener('keydown', handleKeyDown);
-        window.addEventListener('mousedown', handlePointerDown);
+        window.addEventListener('pointerdown', handlePointerDown);
 
         return () => {
             window.clearTimeout(focusTimer);
             window.removeEventListener('keydown', handleKeyDown);
-            window.removeEventListener('mousedown', handlePointerDown);
+            window.removeEventListener('pointerdown', handlePointerDown);
         };
     }, [anchorEl, onClose, open]);
 
@@ -160,15 +160,38 @@ export function KnowledgeBaseIconPicker({
             return;
         }
 
-        const rect = anchorEl.getBoundingClientRect();
-        const width = 320;
-        const viewportPadding = 12;
-        const left = Math.min(rect.left, window.innerWidth - width - viewportPadding);
+        const updatePosition = () => {
+            const rect = anchorEl.getBoundingClientRect();
+            const viewportPadding = 12;
+            const isCompact = window.innerWidth <= 640;
+            const width = isCompact
+                ? window.innerWidth - viewportPadding * 2
+                : 320;
+            const panelHeight = Math.min(360, window.innerHeight - viewportPadding * 2);
+            const left = isCompact
+                ? viewportPadding
+                : Math.min(rect.left, window.innerWidth - width - viewportPadding);
+            const top = isCompact
+                ? viewportPadding
+                : Math.min(
+                      rect.bottom + 8,
+                      window.innerHeight - panelHeight - viewportPadding,
+                  );
 
-        setPosition({
-            top: rect.bottom + 8,
-            left: Math.max(viewportPadding, left),
-        });
+            setPosition({
+                top: Math.max(viewportPadding, top),
+                left: Math.max(viewportPadding, left),
+            });
+        };
+
+        updatePosition();
+        window.addEventListener('resize', updatePosition);
+        window.addEventListener('scroll', updatePosition, true);
+
+        return () => {
+            window.removeEventListener('resize', updatePosition);
+            window.removeEventListener('scroll', updatePosition, true);
+        };
     }, [anchorEl, shouldRender]);
 
     if (!shouldRender || !anchorEl) {

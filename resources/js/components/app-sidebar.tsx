@@ -2,10 +2,11 @@ import { Link, router, usePage } from '@inertiajs/react';
 import {
     BookOpen,
     BriefcaseBusiness,
-    ChevronLeft,
     FileText,
     FolderOpen,
     LockKeyhole,
+    PanelLeftClose,
+    PanelLeftOpen,
     Search,
     UserRound,
     X,
@@ -14,6 +15,7 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
     Sidebar,
     SidebarContent,
@@ -55,7 +57,6 @@ function SidebarSearchPreviewItem({
     return (
         <Link
             href={item.href}
-            prefetch
             className="sidebar-search-preview__item"
             onClick={onSelect}
         >
@@ -79,11 +80,36 @@ function SidebarSearchPreviewItem({
                     <span className="sidebar-search-preview__item-type">
                         {isCategory ? 'Раздел' : 'Статья'}
                     </span>
-                    <span className="sidebar-search-preview__item-meta">{item.meta}</span>
+                    <span className="sidebar-search-preview__item-meta">
+                        {item.meta}
+                    </span>
                 </span>
-                <span className="sidebar-search-preview__item-title">{item.title}</span>
+                <span className="sidebar-search-preview__item-title">
+                    {item.title}
+                </span>
             </span>
         </Link>
+    );
+}
+
+function CompactSidebarTooltip({
+    label,
+    children,
+}: {
+    label: string;
+    children: React.ReactNode;
+}) {
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>{children}</TooltipTrigger>
+            <TooltipContent
+                side="right"
+                align="center"
+                sideOffset={12}
+            >
+                {label}
+            </TooltipContent>
+        </Tooltip>
     );
 }
 
@@ -91,7 +117,12 @@ export function AppSidebar() {
     const page = usePage<SharedProps>();
     const { auth, knowledgeBaseSidebar } = page.props;
     const { state, toggleSidebar, isMobile, setOpenMobile } = useSidebar();
+    const isCollapsed = !isMobile && state === 'collapsed';
     const searchWrapRef = useRef<HTMLDivElement | null>(null);
+    const currentPath = useMemo(
+        () => new URL(page.url, 'http://localhost').pathname,
+        [page.url],
+    );
 
     const searchHref =
         auth.user.role === 'admin'
@@ -106,16 +137,17 @@ export function AppSidebar() {
         const currentUrl = new URL(page.url, 'http://localhost');
 
         return currentUrl.pathname === searchHref
-            ? currentUrl.searchParams.get('q') ?? ''
+            ? (currentUrl.searchParams.get('q') ?? '')
             : '';
     }, [page.url, searchHref]);
 
     const [knowledgeSearch, setKnowledgeSearch] = useState(currentSearchQuery);
-    const [previewResults, setPreviewResults] = useState<KnowledgeBaseSearchResults>({
-        categories: [],
-        articles: [],
-        total: 0,
-    });
+    const [previewResults, setPreviewResults] =
+        useState<KnowledgeBaseSearchResults>({
+            categories: [],
+            articles: [],
+            total: 0,
+        });
     const [isPreviewLoading, setIsPreviewLoading] = useState(false);
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
@@ -183,19 +215,26 @@ export function AppSidebar() {
                 );
 
                 if (!response.ok) {
-                    throw new Error(`Preview request failed: ${response.status}`);
+                    throw new Error(
+                        `Preview request failed: ${response.status}`,
+                    );
                 }
 
-                const payload = (await response.json()) as SearchPreviewResponse;
+                const payload =
+                    (await response.json()) as SearchPreviewResponse;
 
                 setPreviewResults(payload.results);
 
                 if (searchWrapRef.current?.contains(document.activeElement)) {
                     setIsPreviewOpen(true);
                 }
-            } catch (error) {
+            } catch {
                 if (!controller.signal.aborted) {
-                    setPreviewResults({ categories: [], articles: [], total: 0 });
+                    setPreviewResults({
+                        categories: [],
+                        articles: [],
+                        total: 0,
+                    });
                 }
             } finally {
                 if (!controller.signal.aborted) {
@@ -211,7 +250,9 @@ export function AppSidebar() {
     }, [isMobile, knowledgeSearch, previewHref]);
 
     const homeHref =
-        auth.user.role === 'admin' ? '/admin/employees' : '/employee/profile';
+        auth.user.role === 'admin'
+            ? '/admin/knowledge-base'
+            : '/employee/knowledge-base';
 
     const submitKnowledgeSearch = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -221,7 +262,8 @@ export function AppSidebar() {
 
         if (query === '') {
             router.visit(
-                knowledgeBaseSidebar?.home_href ?? searchHref.replace('/search', ''),
+                knowledgeBaseSidebar?.home_href ??
+                    searchHref.replace('/search', ''),
             );
             return;
         }
@@ -291,6 +333,13 @@ export function AppSidebar() {
                   },
               ];
 
+    const compactKnowledgeNodes = knowledgeBaseSidebar?.nodes ?? [];
+    const stopTextInputPointerPropagation = (event: {
+        stopPropagation: () => void;
+    }) => {
+        event.stopPropagation();
+    };
+
     return (
         <Sidebar collapsible="icon" variant="inset">
             <SidebarHeader className="sidebar-panel__header">
@@ -298,15 +347,29 @@ export function AppSidebar() {
                     type="button"
                     onClick={toggleSidebar}
                     className="sidebar-panel__toggle"
-                    aria-label="Свернуть меню"
+                    aria-label={
+                        isMobile
+                            ? 'Закрыть меню'
+                            : isCollapsed
+                              ? 'Развернуть меню'
+                              : 'Свернуть меню'
+                    }
+                    title={
+                        isMobile
+                            ? 'Закрыть меню'
+                            : isCollapsed
+                              ? 'Развернуть меню'
+                              : 'Свернуть меню'
+                    }
                 >
-                    <ChevronLeft
-                        className={`size-3 transition-transform ${
-                            state === 'collapsed' ? 'rotate-180' : ''
-                        }`}
-                    />
+                    {isMobile ? (
+                        <PanelLeftClose className="size-4" />
+                    ) : isCollapsed ? (
+                        <PanelLeftOpen className="size-4" />
+                    ) : (
+                        <PanelLeftClose className="size-4" />
+                    )}
                 </button>
-
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton
@@ -316,7 +379,6 @@ export function AppSidebar() {
                         >
                             <Link
                                 href={homeHref}
-                                prefetch
                                 onClick={() => {
                                     if (isMobile) {
                                         setOpenMobile(false);
@@ -334,169 +396,258 @@ export function AppSidebar() {
                 <NavMain items={mainNavItems} />
 
                 {knowledgeBaseSidebar ? (
-                    <div className="sidebar-panel__sections">
-                        <div className="sidebar-panel__section-label">Разделы</div>
+                    isCollapsed ? (
+                        <div className="sidebar-panel__compact-actions">
+                            <CompactSidebarTooltip label="Поиск">
+                                <Link
+                                    href={searchHref}
+                                    className="sidebar-panel__compact-link"
+                                    aria-label="Открыть поиск"
+                                    title="Открыть поиск"
+                                >
+                                    <Search className="size-4" />
+                                    <span className="sr-only">
+                                        Открыть поиск
+                                    </span>
+                                </Link>
+                            </CompactSidebarTooltip>
 
-                        <div
-                            ref={searchWrapRef}
-                            className="sidebar-panel__search-wrap"
-                        >
-                            <form
-                                className="sidebar-panel__search"
-                                onSubmit={submitKnowledgeSearch}
-                            >
-                                <Search className="sidebar-panel__search-icon-svg size-3.5" />
-                                <input
-                                    type="text"
-                                    value={knowledgeSearch}
-                                    onChange={(event) =>
-                                        setKnowledgeSearch(event.target.value)
-                                    }
-                                    onFocus={() => {
-                                        if (isMobile) {
-                                            const query = knowledgeSearch.trim();
+                            <div className="sidebar-panel__compact-tree">
+                                {compactKnowledgeNodes.map((node) => {
+                                    const nodePath = new URL(
+                                        node.href,
+                                        'http://localhost',
+                                    ).pathname;
+                                    const isActive =
+                                        currentPath === nodePath ||
+                                        currentPath.startsWith(`${nodePath}/`);
 
-                                            router.get(
-                                                searchHref,
-                                                query === '' ? {} : { q: query },
-                                                {
-                                                    preserveState: true,
-                                                    preserveScroll: false,
-                                                },
-                                            );
-                                            setOpenMobile(false);
-                                            return;
-                                        }
-
-                                        if (knowledgeSearch.trim() !== '') {
-                                            setIsPreviewOpen(true);
-                                        }
-                                    }}
-                                    placeholder="Поиск..."
-                                    inputMode="search"
-                                    autoComplete="off"
-                                    className="sidebar-panel__search-input"
-                                />
-                                {knowledgeSearch.trim() !== '' ? (
-                                    <button
-                                        type="button"
-                                        className="sidebar-panel__search-clear"
-                                        onClick={clearSearch}
-                                        aria-label="Очистить поиск"
-                                    >
-                                        <X className="size-3.5" />
-                                    </button>
-                                ) : null}
-                            </form>
-
-                            <div
-                                className={`sidebar-search-preview ${
-                                    isPreviewOpen &&
-                                    knowledgeSearch.trim() !== ''
-                                        ? 'is-open'
-                                        : ''
-                                }`}
-                            >
-                                {isPreviewLoading ? (
-                                    <div className="sidebar-search-preview__state">
-                                        Ищем совпадения...
-                                    </div>
-                                ) : previewResults.total > 0 ? (
-                                    <>
-                                        {previewResults.categories.length > 0 ? (
-                                            <div className="sidebar-search-preview__section">
-                                                <div className="sidebar-search-preview__title">
-                                                    Разделы
-                                                </div>
-                                                <div className="sidebar-search-preview__list">
-                                                    {previewResults.categories.map((item) => (
-                                                        <SidebarSearchPreviewItem
-                                                            key={`category-${item.id}`}
-                                                            item={item}
-                                                            onSelect={closePreview}
-                                                        />
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        ) : null}
-
-                                        {previewResults.articles.length > 0 ? (
-                                            <div className="sidebar-search-preview__section">
-                                                <div className="sidebar-search-preview__title">
-                                                    Статьи и материалы
-                                                </div>
-                                                <div className="sidebar-search-preview__list">
-                                                    {previewResults.articles.map((item) => (
-                                                        <SidebarSearchPreviewItem
-                                                            key={`article-${item.id}`}
-                                                            item={item}
-                                                            onSelect={closePreview}
-                                                        />
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        ) : null}
-
-                                        <div className="sidebar-search-preview__footer">
-                                            <button
-                                                type="button"
-                                                className="sidebar-search-preview__all"
+                                    return (
+                                        <CompactSidebarTooltip
+                                            key={node.id}
+                                            label={node.name}
+                                        >
+                                            <Link
+                                                href={node.href}
+                                                className={`sidebar-panel__compact-node ${
+                                                    isActive ? 'is-active' : ''
+                                                }`}
+                                                aria-label={node.name}
                                                 onClick={() => {
-                                                    const query = knowledgeSearch.trim();
-
-                                                    if (query === '') {
-                                                        return;
-                                                    }
-
-                                                    setIsPreviewOpen(false);
-                                                    router.get(
-                                                        searchHref,
-                                                        { q: query },
-                                                        {
-                                                            preserveState: true,
-                                                            preserveScroll: false,
-                                                        },
-                                                    );
-
                                                     if (isMobile) {
                                                         setOpenMobile(false);
                                                     }
                                                 }}
                                             >
-                                                Открыть полный поиск
-                                            </button>
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div className="sidebar-search-preview__state">
-                                        Ничего не найдено. Нажмите Enter для полного поиска.
-                                    </div>
-                                )}
+                                                <KnowledgeBaseIcon
+                                                    icon={node.icon ?? ''}
+                                                    imageUrl={
+                                                        node.icon_image_url ??
+                                                        null
+                                                    }
+                                                    className="sidebar-panel__compact-node-emoji"
+                                                    imageClassName="sidebar-panel__compact-node-image"
+                                                />
+                                                <span className="sr-only">
+                                                    {node.name}
+                                                </span>
+                                            </Link>
+                                        </CompactSidebarTooltip>
+                                    );
+                                })}
                             </div>
                         </div>
+                    ) : (
+                        <div className="sidebar-panel__sections">
+                            <div className="sidebar-panel__section-label">
+                                Разделы
+                            </div>
 
-                        <div className="sidebar-panel__tree">
-                            <KnowledgeBaseSidebarTree
-                                nodes={knowledgeBaseSidebar.nodes}
-                                canManage={auth.user.role === 'admin'}
-                            />
-
-                            {auth.user.role === 'admin' ? (
-                                <Link
-                                    href={`${knowledgeBaseSidebar.home_href}?create=1`}
-                                    prefetch
-                                    className="sidebar-panel__new"
-                                    onClick={() => {
-                                        if (isMobile) {
-                                            setOpenMobile(false);
-                                        }
-                                    }}
+                            <div
+                                ref={searchWrapRef}
+                                className="sidebar-panel__search-wrap"
+                            >
+                                <form
+                                    className="sidebar-panel__search"
+                                    onSubmit={submitKnowledgeSearch}
                                 >
-                                    + Новая категория
-                                </Link>
-                            ) : null}
+                                    <Search className="sidebar-panel__search-icon-svg size-3.5" />
+                                    <input
+                                        type="text"
+                                        value={knowledgeSearch}
+                                        onMouseDownCapture={
+                                            stopTextInputPointerPropagation
+                                        }
+                                        onPointerDownCapture={
+                                            stopTextInputPointerPropagation
+                                        }
+                                        onChange={(event) =>
+                                            setKnowledgeSearch(
+                                                event.target.value,
+                                            )
+                                        }
+                                        onFocus={() => {
+                                            if (isMobile) {
+                                                const query =
+                                                    knowledgeSearch.trim();
+
+                                                router.get(
+                                                    searchHref,
+                                                    query === ''
+                                                        ? {}
+                                                        : { q: query },
+                                                    {
+                                                        preserveState: true,
+                                                        preserveScroll: false,
+                                                    },
+                                                );
+                                                setOpenMobile(false);
+                                                return;
+                                            }
+
+                                            if (knowledgeSearch.trim() !== '') {
+                                                setIsPreviewOpen(true);
+                                            }
+                                        }}
+                                        placeholder="Поиск..."
+                                        inputMode="search"
+                                        autoComplete="off"
+                                        className="sidebar-panel__search-input"
+                                    />
+                                    {knowledgeSearch.trim() !== '' ? (
+                                        <button
+                                            type="button"
+                                            className="sidebar-panel__search-clear"
+                                            onClick={clearSearch}
+                                            aria-label="Очистить поиск"
+                                        >
+                                            <X className="size-3.5" />
+                                        </button>
+                                    ) : null}
+                                </form>
+
+                                <div
+                                    className={`sidebar-search-preview ${
+                                        isPreviewOpen &&
+                                        knowledgeSearch.trim() !== ''
+                                            ? 'is-open'
+                                            : ''
+                                    }`}
+                                >
+                                    {isPreviewLoading ? (
+                                        <div className="sidebar-search-preview__state">
+                                            Ищем совпадения...
+                                        </div>
+                                    ) : previewResults.total > 0 ? (
+                                        <>
+                                            {previewResults.categories.length >
+                                            0 ? (
+                                                <div className="sidebar-search-preview__section">
+                                                    <div className="sidebar-search-preview__title">
+                                                        Разделы
+                                                    </div>
+                                                    <div className="sidebar-search-preview__list">
+                                                        {previewResults.categories.map(
+                                                            (item) => (
+                                                                <SidebarSearchPreviewItem
+                                                                    key={`category-${item.id}`}
+                                                                    item={item}
+                                                                    onSelect={
+                                                                        closePreview
+                                                                    }
+                                                                />
+                                                            ),
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ) : null}
+
+                                            {previewResults.articles.length >
+                                            0 ? (
+                                                <div className="sidebar-search-preview__section">
+                                                    <div className="sidebar-search-preview__title">
+                                                        Статьи и материалы
+                                                    </div>
+                                                    <div className="sidebar-search-preview__list">
+                                                        {previewResults.articles.map(
+                                                            (item) => (
+                                                                <SidebarSearchPreviewItem
+                                                                    key={`article-${item.id}`}
+                                                                    item={item}
+                                                                    onSelect={
+                                                                        closePreview
+                                                                    }
+                                                                />
+                                                            ),
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ) : null}
+
+                                            <div className="sidebar-search-preview__footer">
+                                                <button
+                                                    type="button"
+                                                    className="sidebar-search-preview__all"
+                                                    onClick={() => {
+                                                        const query =
+                                                            knowledgeSearch.trim();
+
+                                                        if (query === '') {
+                                                            return;
+                                                        }
+
+                                                        setIsPreviewOpen(false);
+                                                        router.get(
+                                                            searchHref,
+                                                            { q: query },
+                                                            {
+                                                                preserveState: true,
+                                                                preserveScroll: false,
+                                                            },
+                                                        );
+
+                                                        if (isMobile) {
+                                                            setOpenMobile(
+                                                                false,
+                                                            );
+                                                        }
+                                                    }}
+                                                >
+                                                    Открыть полный поиск
+                                                </button>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="sidebar-search-preview__state">
+                                            Ничего не найдено. Нажмите Enter для
+                                            полного поиска.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="sidebar-panel__tree">
+                                <KnowledgeBaseSidebarTree
+                                    nodes={knowledgeBaseSidebar.nodes}
+                                    canManage={auth.user.role === 'admin'}
+                                />
+
+                                {auth.user.role === 'admin' ? (
+                                    <Link
+                                        href={`${knowledgeBaseSidebar.home_href}?create=1`}
+                                        className="sidebar-panel__new"
+                                        onClick={() => {
+                                            if (isMobile) {
+                                                setOpenMobile(false);
+                                            }
+                                        }}
+                                    >
+                                        + Новая категория
+                                    </Link>
+                                ) : null}
+                            </div>
                         </div>
-                    </div>
+                    )
                 ) : null}
             </SidebarContent>
 

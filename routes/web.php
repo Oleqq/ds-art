@@ -6,11 +6,13 @@ use App\Http\Controllers\Admin\EmployeeFileController as AdminEmployeeFileContro
 use App\Http\Controllers\Admin\EmployeePhotoController as AdminEmployeePhotoController;
 use App\Http\Controllers\Admin\KnowledgeBaseArticleController as AdminKnowledgeBaseArticleController;
 use App\Http\Controllers\Admin\KnowledgeBaseController as AdminKnowledgeBaseController;
+use App\Http\Controllers\Auth\EmployeeActivationController;
 use App\Http\Controllers\Employee\KnowledgeBaseArticleController as EmployeeKnowledgeBaseArticleController;
 use App\Http\Controllers\Employee\KnowledgeBaseController as EmployeeKnowledgeBaseController;
 use App\Http\Controllers\Employee\ProfileController as EmployeeProfileController;
 use App\Http\Controllers\KnowledgeBaseSearchController;
 use App\Http\Controllers\KnowledgeBaseSearchPreviewController;
+use App\Http\Controllers\PublicStorageController;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -23,25 +25,35 @@ Route::get('/', function (Request $request) {
     return redirect()->route('login');
 })->name('home');
 
+Route::middleware('guest')->group(function () {
+    Route::get('register', [EmployeeActivationController::class, 'create'])->name('register');
+    Route::post('register/send-code', [EmployeeActivationController::class, 'sendCode'])->name('register.code');
+    Route::post('register', [EmployeeActivationController::class, 'store'])->name('register.store');
+});
+
 Route::middleware(['auth', 'active'])->group(function () {
     Route::get('dashboard', function (Request $request) {
         /** @var User $user */
         $user = $request->user();
 
         return $user->isAdmin()
-            ? redirect()->route('admin.dashboard')
-            : redirect()->route('employee.dashboard');
+            ? redirect()->route('admin.knowledge-base.index')
+            : redirect()->route('employee.knowledge-base.index');
     })->name('dashboard');
 
     Route::middleware('role:admin')->group(function () {
-        Route::get('admin', [AdminEmployeeController::class, 'index'])->name('admin.dashboard');
+        Route::redirect('admin', '/admin/knowledge-base')->name('admin.dashboard');
         Route::get('admin/employees', [AdminEmployeeController::class, 'index'])->name('admin.employees.index');
+        Route::get('admin/employees/roles', [AdminEmployeeController::class, 'roles'])->name('admin.employees.roles.index');
+        Route::post('admin/employees/roles', [AdminEmployeeController::class, 'storeRole'])->name('admin.employees.roles.store');
+        Route::delete('admin/employees/roles', [AdminEmployeeController::class, 'destroyRole'])->name('admin.employees.roles.destroy');
         Route::get('admin/employees/create', [AdminEmployeeController::class, 'create'])->name('admin.employees.create');
         Route::post('admin/employees', [AdminEmployeeController::class, 'store'])->name('admin.employees.store');
         Route::get('admin/employees/{employee}', [AdminEmployeeController::class, 'show'])->name('admin.employees.show');
         Route::get('admin/employees/{employee}/edit', [AdminEmployeeController::class, 'edit'])->name('admin.employees.edit');
         Route::put('admin/employees/{employee}', [AdminEmployeeController::class, 'update'])->name('admin.employees.update');
         Route::patch('admin/employees/{employee}/status', [AdminEmployeeController::class, 'toggleStatus'])->name('admin.employees.status');
+        Route::delete('admin/employees/{employee}', [AdminEmployeeController::class, 'destroy'])->name('admin.employees.destroy');
         Route::post('admin/employees/{employee}/photo', [AdminEmployeePhotoController::class, 'update'])->name('admin.employees.photo.update');
         Route::post('admin/employees/{employee}/files', [AdminEmployeeFileController::class, 'store'])->name('admin.employees.files.store');
         Route::delete('admin/employees/{employee}/files/{file}', [AdminEmployeeFileController::class, 'destroy'])->name('admin.employees.files.destroy');
@@ -55,6 +67,7 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::get('admin/knowledge-base/search', KnowledgeBaseSearchController::class)->name('admin.knowledge-base.search');
         Route::get('admin/knowledge-base/search/preview', KnowledgeBaseSearchPreviewController::class)->name('admin.knowledge-base.search.preview');
         Route::post('admin/knowledge-base/categories', [AdminKnowledgeBaseController::class, 'store'])->name('admin.knowledge-base.categories.store');
+        Route::patch('admin/knowledge-base/categories/{category}/place', [AdminKnowledgeBaseController::class, 'place'])->name('admin.knowledge-base.categories.place');
         Route::patch('admin/knowledge-base/categories/{category}/move', [AdminKnowledgeBaseController::class, 'move'])->name('admin.knowledge-base.categories.move');
         Route::patch('admin/knowledge-base/categories/{category}/reorder', [AdminKnowledgeBaseController::class, 'reorder'])->name('admin.knowledge-base.categories.reorder');
         Route::get('admin/knowledge-base/categories/{category}', [AdminKnowledgeBaseController::class, 'show'])->name('admin.knowledge-base.categories.show');
@@ -71,8 +84,13 @@ Route::middleware(['auth', 'active'])->group(function () {
     });
 
     Route::middleware('role:employee')->group(function () {
-        Route::get('employee', [EmployeeProfileController::class, 'show'])->name('employee.dashboard');
+        Route::redirect('employee', '/employee/knowledge-base')->name('employee.dashboard');
         Route::get('employee/profile', [EmployeeProfileController::class, 'show'])->name('employee.profile.show');
+        Route::put('employee/profile', [EmployeeProfileController::class, 'update'])->name('employee.profile.update');
+        Route::post('employee/profile/photo', [EmployeeProfileController::class, 'updatePhoto'])->name('employee.profile.photo.update');
+        Route::post('employee/profile/files', [EmployeeProfileController::class, 'storeFile'])->name('employee.profile.files.store');
+        Route::delete('employee/profile/files/{file}', [EmployeeProfileController::class, 'destroyFile'])->name('employee.profile.files.destroy');
+        Route::get('employee/profile/files/{file}/download', [EmployeeProfileController::class, 'downloadFile'])->name('employee.profile.files.download');
         Route::get('employee/knowledge-base', [EmployeeKnowledgeBaseController::class, 'index'])->name('employee.knowledge-base.index');
         Route::get('employee/knowledge-base/search', KnowledgeBaseSearchController::class)->name('employee.knowledge-base.search');
         Route::get('employee/knowledge-base/search/preview', KnowledgeBaseSearchPreviewController::class)->name('employee.knowledge-base.search.preview');
@@ -84,5 +102,9 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::delete('employee/knowledge-base/articles/{article}', [EmployeeKnowledgeBaseArticleController::class, 'destroy'])->name('employee.knowledge-base.articles.destroy');
     });
 });
+
+Route::get('media/{path}', PublicStorageController::class)
+    ->where('path', '.*')
+    ->name('public.storage');
 
 require __DIR__.'/settings.php';

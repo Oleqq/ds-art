@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\KnowledgeBase;
 
+use App\Models\Employee;
 use App\Models\KnowledgeArticle;
 use App\Models\KnowledgeArticleBlock;
 use App\Models\KnowledgeCategory;
@@ -53,8 +54,20 @@ class KnowledgeBasePagesTest extends TestCase
             'is_visible_to_employees' => true,
         ]);
 
+        $employeeRecord = Employee::query()->create([
+            'name' => 'Access Employee',
+            'email' => 'access.employee@agency.ru',
+            'phone' => '+7 999 111-22-33',
+            'position' => 'SMM-менеджер',
+            'joined_on' => '2024-02-14',
+            'status' => Employee::STATUS_ACTIVE,
+            'schedule' => Employee::defaultSchedule(),
+        ]);
+
         $employee = User::factory()->create([
             'role' => User::ROLE_EMPLOYEE,
+            'email' => $employeeRecord->email,
+            'employee_id' => $employeeRecord->id,
         ]);
 
         $this->actingAs($employee)
@@ -215,6 +228,72 @@ class KnowledgeBasePagesTest extends TestCase
         $this->assertSame($target->id, $secondArticle->fresh()->knowledge_category_id);
     }
 
+    public function test_admin_can_place_category_from_sidebar_drag_and_drop(): void
+    {
+        $admin = User::factory()->create([
+            'role' => User::ROLE_ADMIN,
+        ]);
+
+        $firstRoot = KnowledgeCategory::query()->create([
+            'name' => 'First root',
+            'slug' => 'first-root',
+            'sort_order' => 1,
+            'is_visible_to_employees' => true,
+        ]);
+        $secondRoot = KnowledgeCategory::query()->create([
+            'name' => 'Second root',
+            'slug' => 'second-root',
+            'sort_order' => 2,
+            'is_visible_to_employees' => true,
+        ]);
+        $thirdRoot = KnowledgeCategory::query()->create([
+            'name' => 'Third root',
+            'slug' => 'third-root',
+            'sort_order' => 3,
+            'is_visible_to_employees' => true,
+        ]);
+        $firstChild = KnowledgeCategory::query()->create([
+            'parent_id' => $firstRoot->id,
+            'name' => 'First child',
+            'slug' => 'first-child-sidebar',
+            'sort_order' => 1,
+            'is_visible_to_employees' => true,
+        ]);
+        $secondChild = KnowledgeCategory::query()->create([
+            'parent_id' => $firstRoot->id,
+            'name' => 'Second child',
+            'slug' => 'second-child-sidebar',
+            'sort_order' => 2,
+            'is_visible_to_employees' => true,
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('admin.knowledge-base.categories.place', $thirdRoot), [
+                'parent_id' => null,
+                'ordered_category_ids' => [$firstRoot->id, $thirdRoot->id, $secondRoot->id],
+                'return_to' => route('admin.knowledge-base.index'),
+            ])
+            ->assertRedirect(route('admin.knowledge-base.index'));
+
+        $this->assertSame(1, $firstRoot->fresh()->sort_order);
+        $this->assertSame(2, $thirdRoot->fresh()->sort_order);
+        $this->assertSame(3, $secondRoot->fresh()->sort_order);
+
+        $this->actingAs($admin)
+            ->patch(route('admin.knowledge-base.categories.place', $secondChild), [
+                'parent_id' => $secondRoot->id,
+                'ordered_category_ids' => [$secondChild->id],
+                'return_to' => route('admin.knowledge-base.index'),
+            ])
+            ->assertRedirect(route('admin.knowledge-base.index'));
+
+        $secondChild->refresh();
+
+        $this->assertSame($secondRoot->id, $secondChild->parent_id);
+        $this->assertSame(1, $secondChild->sort_order);
+        $this->assertSame(1, $firstChild->fresh()->sort_order);
+    }
+
     public function test_admin_searches_articles_categories_and_normalized_blocks(): void
     {
         $category = KnowledgeCategory::query()->create([
@@ -308,8 +387,20 @@ class KnowledgeBasePagesTest extends TestCase
             'is_published' => true,
         ]);
 
+        $employeeRecord = Employee::query()->create([
+            'name' => 'Access Employee',
+            'email' => 'access.employee@agency.ru',
+            'phone' => '+7 999 111-22-33',
+            'position' => 'SMM-менеджер',
+            'joined_on' => '2024-02-14',
+            'status' => Employee::STATUS_ACTIVE,
+            'schedule' => Employee::defaultSchedule(),
+        ]);
+
         $employee = User::factory()->create([
             'role' => User::ROLE_EMPLOYEE,
+            'email' => $employeeRecord->email,
+            'employee_id' => $employeeRecord->id,
         ]);
 
         $this->actingAs($employee)
@@ -343,8 +434,20 @@ class KnowledgeBasePagesTest extends TestCase
             'access_level' => KnowledgeArticle::ACCESS_ADMINS,
         ]);
 
+        $employeeRecord = Employee::query()->create([
+            'name' => 'Access Employee',
+            'email' => 'access.employee@agency.ru',
+            'phone' => '+7 999 111-22-33',
+            'position' => 'SMM-менеджер',
+            'joined_on' => '2024-02-14',
+            'status' => Employee::STATUS_ACTIVE,
+            'schedule' => Employee::defaultSchedule(),
+        ]);
+
         $employee = User::factory()->create([
             'role' => User::ROLE_EMPLOYEE,
+            'email' => $employeeRecord->email,
+            'employee_id' => $employeeRecord->id,
         ]);
 
         $this->actingAs($employee)
@@ -443,8 +546,20 @@ class KnowledgeBasePagesTest extends TestCase
             'is_published' => true,
         ]);
 
+        $employeeRecord = Employee::query()->create([
+            'name' => 'Access Employee',
+            'email' => 'access.employee@agency.ru',
+            'phone' => '+7 999 111-22-33',
+            'position' => 'SMM-менеджер',
+            'joined_on' => '2024-02-14',
+            'status' => Employee::STATUS_ACTIVE,
+            'schedule' => Employee::defaultSchedule(),
+        ]);
+
         $employee = User::factory()->create([
             'role' => User::ROLE_EMPLOYEE,
+            'email' => $employeeRecord->email,
+            'employee_id' => $employeeRecord->id,
         ]);
 
         $admin = User::factory()->create([
@@ -495,6 +610,179 @@ class KnowledgeBasePagesTest extends TestCase
             ->assertDontSee('Published access article');
     }
 
+    public function test_view_all_articles_turns_on_every_section_access(): void
+    {
+        $firstCategory = KnowledgeCategory::query()->create([
+            'name' => 'First all access category',
+            'slug' => 'first-all-access-category',
+            'icon' => '',
+            'sort_order' => 0,
+            'is_visible_to_employees' => false,
+        ]);
+        $firstArticle = KnowledgeArticle::query()->create([
+            'knowledge_category_id' => $firstCategory->id,
+            'title' => 'First all access article',
+            'slug' => 'first-all-access-article',
+            'icon' => '',
+            'summary' => null,
+            'content' => '',
+            'blocks' => [],
+            'is_published' => true,
+        ]);
+
+        $secondCategory = KnowledgeCategory::query()->create([
+            'name' => 'Second all access category',
+            'slug' => 'second-all-access-category',
+            'icon' => '',
+            'sort_order' => 1,
+            'is_visible_to_employees' => false,
+        ]);
+        $secondArticle = KnowledgeArticle::query()->create([
+            'knowledge_category_id' => $secondCategory->id,
+            'title' => 'Second all access article',
+            'slug' => 'second-all-access-article',
+            'icon' => '',
+            'summary' => null,
+            'content' => '',
+            'blocks' => [],
+            'is_published' => true,
+        ]);
+
+        $employeeRecord = Employee::query()->create([
+            'name' => 'All Access Employee',
+            'email' => 'all.access.employee@agency.ru',
+            'phone' => '+7 999 111-22-33',
+            'position' => 'SMM-manager',
+            'joined_on' => '2024-02-14',
+            'status' => Employee::STATUS_ACTIVE,
+            'schedule' => Employee::defaultSchedule(),
+        ]);
+
+        $employee = User::factory()->create([
+            'role' => User::ROLE_EMPLOYEE,
+            'email' => $employeeRecord->email,
+            'employee_id' => $employeeRecord->id,
+        ]);
+
+        $employee->knowledgePermission()->create([
+            'is_deactivated' => false,
+            'can_view' => true,
+            'can_create' => false,
+            'can_update' => false,
+            'can_delete' => false,
+            'view_all_articles' => true,
+        ]);
+
+        $admin = User::factory()->create([
+            'role' => User::ROLE_ADMIN,
+        ]);
+
+        $this->assertDatabaseMissing('knowledge_user_category_permissions', [
+            'user_id' => $employee->id,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.access.index', ['user' => $employee->id]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('admin/access/index')
+                ->where('selectedUserId', $employee->id)
+                ->where('permission.view_all_articles', true)
+                ->has('categories', 2)
+                ->where('categories.0.can_view', true)
+                ->where('categories.1.can_view', true)
+            );
+
+        $this->actingAs($employee)
+            ->get(route('employee.knowledge-base.categories.show', $firstCategory))
+            ->assertOk();
+
+        $this->actingAs($admin)
+            ->patch(route('admin.access.users.update', $employee), [
+                'is_deactivated' => false,
+                'can_view' => true,
+                'can_create' => false,
+                'can_update' => false,
+                'can_delete' => false,
+                'view_all_articles' => true,
+                'category_ids' => [],
+                'article_ids' => [],
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('knowledge_user_category_permissions', [
+            'user_id' => $employee->id,
+            'knowledge_category_id' => $firstCategory->id,
+            'can_view' => true,
+        ]);
+        $this->assertDatabaseHas('knowledge_user_category_permissions', [
+            'user_id' => $employee->id,
+            'knowledge_category_id' => $secondCategory->id,
+            'can_view' => true,
+        ]);
+        $this->assertDatabaseHas('knowledge_user_article_permissions', [
+            'user_id' => $employee->id,
+            'knowledge_article_id' => $firstArticle->id,
+            'can_view' => true,
+        ]);
+        $this->assertDatabaseHas('knowledge_user_article_permissions', [
+            'user_id' => $employee->id,
+            'knowledge_article_id' => $secondArticle->id,
+            'can_view' => true,
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('admin.access.users.update', $employee), [
+                'is_deactivated' => false,
+                'can_view' => true,
+                'can_create' => false,
+                'can_update' => false,
+                'can_delete' => false,
+                'view_all_articles' => false,
+                'category_ids' => [$firstCategory->id, $secondCategory->id],
+                'article_ids' => [$firstArticle->id, $secondArticle->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('knowledge_user_category_permissions', [
+            'user_id' => $employee->id,
+            'knowledge_category_id' => $firstCategory->id,
+            'can_view' => true,
+        ]);
+        $this->assertDatabaseHas('knowledge_user_category_permissions', [
+            'user_id' => $employee->id,
+            'knowledge_category_id' => $secondCategory->id,
+            'can_view' => true,
+        ]);
+        $this->assertDatabaseHas('knowledge_user_article_permissions', [
+            'user_id' => $employee->id,
+            'knowledge_article_id' => $firstArticle->id,
+            'can_view' => true,
+        ]);
+        $this->assertDatabaseHas('knowledge_user_article_permissions', [
+            'user_id' => $employee->id,
+            'knowledge_article_id' => $secondArticle->id,
+            'can_view' => true,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.access.index', ['user' => $employee->id]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('admin/access/index')
+                ->where('permission.view_all_articles', false)
+                ->where('categories.0.can_view', true)
+                ->where('categories.0.articles.0.can_view', true)
+                ->where('categories.1.can_view', true)
+                ->where('categories.1.articles.0.can_view', true)
+            );
+
+        $this->actingAs($employee)
+            ->get(route('employee.knowledge-base.search', ['q' => 'Second all access']))
+            ->assertOk()
+            ->assertSee('Second all access article');
+    }
+
     public function test_employee_permissions_enable_article_create_update_asset_upload_and_delete(): void
     {
         Storage::fake('public');
@@ -533,7 +821,7 @@ class KnowledgeBasePagesTest extends TestCase
                 'can_create' => true,
                 'can_update' => true,
                 'can_delete' => true,
-                'view_all_articles' => false,
+                'view_all_articles' => true,
                 'category_ids' => [$category->id],
                 'article_ids' => [$article->id],
             ])
@@ -657,7 +945,7 @@ class KnowledgeBasePagesTest extends TestCase
                 'can_create' => true,
                 'can_update' => true,
                 'can_delete' => true,
-                'view_all_articles' => false,
+                'view_all_articles' => true,
                 'category_ids' => [$category->id],
                 'article_ids' => [],
             ])
@@ -735,5 +1023,19 @@ class KnowledgeBasePagesTest extends TestCase
                 'title' => 'Basics content plan',
                 'type' => 'article',
             ]);
+    }
+
+    public function test_public_storage_route_serves_public_files(): void
+    {
+        Storage::disk('public')->put('kb/sample.txt', 'knowledge-base-file');
+
+        try {
+            $response = $this->get('/media/kb/sample.txt');
+
+            $response->assertOk();
+            $this->assertSame('knowledge-base-file', $response->streamedContent());
+        } finally {
+            Storage::disk('public')->delete('kb/sample.txt');
+        }
     }
 }

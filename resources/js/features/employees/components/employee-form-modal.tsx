@@ -13,6 +13,7 @@ type EmployeeFormModalProps = {
     cancelHref?: string;
     onCancel?: () => void;
     onSuccess?: () => void;
+    mode?: 'admin' | 'self';
 };
 
 function ModalDismiss({
@@ -51,6 +52,7 @@ export function EmployeeFormModal({
     cancelHref,
     onCancel,
     onSuccess,
+    mode = 'admin',
 }: EmployeeFormModalProps) {
     const form = useForm<EmployeeFormPayload>({
         ...employee,
@@ -63,6 +65,7 @@ export function EmployeeFormModal({
 
     const saveLabel =
         method === 'post' ? 'Сохраняем сотрудника...' : 'Сохраняем изменения...';
+    const isSelfMode = mode === 'self';
 
     const submit = () => {
         const options = {
@@ -174,6 +177,14 @@ export function EmployeeFormModal({
                         <div className="text-xs text-muted-foreground">
                             Можно выбрать из списка или ввести новую роль вручную.
                         </div>
+                        {isSelfMode ? null : (
+                            <Link
+                                href="/admin/employees/roles"
+                                className="employee-form__roles-link"
+                            >
+                                Открыть список ролей
+                            </Link>
+                        )}
                         {form.errors.position ? (
                             <p className="form-field__error">{form.errors.position}</p>
                         ) : null}
@@ -196,25 +207,27 @@ export function EmployeeFormModal({
                         ) : null}
                     </div>
 
-                    <div className="form-field form-field--full">
-                        <label htmlFor="employee-status">Статус</label>
-                        <select
-                            id="employee-status"
-                            value={form.data.status}
-                            onChange={(event) =>
-                                form.setData(
-                                    'status',
-                                    event.target.value as EmployeeFormPayload['status'],
-                                )
-                            }
-                        >
-                            <option value="active">Активный</option>
-                            <option value="inactive">Неактивный</option>
-                        </select>
-                        {form.errors.status ? (
-                            <p className="form-field__error">{form.errors.status}</p>
-                        ) : null}
-                    </div>
+                    {isSelfMode ? null : (
+                        <div className="form-field form-field--full">
+                            <label htmlFor="employee-status">Статус</label>
+                            <select
+                                id="employee-status"
+                                value={form.data.status}
+                                onChange={(event) =>
+                                    form.setData(
+                                        'status',
+                                        event.target.value as EmployeeFormPayload['status'],
+                                    )
+                                }
+                            >
+                                <option value="active">Активный</option>
+                                <option value="inactive">Неактивный</option>
+                            </select>
+                            {form.errors.status ? (
+                                <p className="form-field__error">{form.errors.status}</p>
+                            ) : null}
+                        </div>
+                    )}
 
                     <div className="form-field form-field--full">
                         <label>График работы — рабочие дни</label>
@@ -286,23 +299,25 @@ export function EmployeeFormModal({
                         ) : null}
                     </div>
 
-                    <div className="form-field form-field--full">
-                        <label htmlFor="employee-notes">Заметки руководителя</label>
-                        <textarea
-                            id="employee-notes"
-                            rows={5}
-                            value={form.data.manager_notes}
-                            onChange={(event) =>
-                                form.setData('manager_notes', event.target.value)
-                            }
-                            placeholder="Сильные стороны, задачи, наблюдения…"
-                        />
-                        {form.errors.manager_notes ? (
-                            <p className="form-field__error">
-                                {form.errors.manager_notes}
-                            </p>
-                        ) : null}
-                    </div>
+                    {isSelfMode ? null : (
+                        <div className="form-field form-field--full">
+                            <label htmlFor="employee-notes">Заметки руководителя</label>
+                            <textarea
+                                id="employee-notes"
+                                rows={5}
+                                value={form.data.manager_notes}
+                                onChange={(event) =>
+                                    form.setData('manager_notes', event.target.value)
+                                }
+                                placeholder="Сильные стороны, задачи, наблюдения…"
+                            />
+                            {form.errors.manager_notes ? (
+                                <p className="form-field__error">
+                                    {form.errors.manager_notes}
+                                </p>
+                            ) : null}
+                        </div>
+                    )}
                 </div>
 
                 <div className="modal-shell__footer">

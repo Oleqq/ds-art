@@ -75,6 +75,13 @@ export default function AdminKnowledgeBaseIndex({
         formData.append('icon_image_url', payload.icon_image_url ?? '');
         formData.append('clear_icon_image', payload.clear_icon_image ? '1' : '0');
         formData.append('cover_url', payload.cover_url ?? '');
+        formData.append('cover_position_x', String(payload.cover_position_x ?? 50));
+        formData.append('cover_position_y', String(payload.cover_position_y ?? 50));
+        formData.append(
+            'cover_zoom_percent',
+            String(payload.cover_zoom_percent ?? 100),
+        );
+        formData.append('cover_height_px', String(payload.cover_height_px ?? 220));
         formData.append('clear_cover', payload.clear_cover ? '1' : '0');
         formData.append('is_visible_to_employees', payload.is_visible_to_employees ? '1' : '0');
         formData.append('return_to', payload.return_to);
@@ -99,6 +106,10 @@ export default function AdminKnowledgeBaseIndex({
         clear_icon_image: false,
         cover_url: item.cover_url ?? '',
         cover: null,
+        cover_position_x: 50,
+        cover_position_y: 50,
+        cover_zoom_percent: 100,
+        cover_height_px: 220,
         clear_cover: false,
         parent_id: item.parent_id,
         is_visible_to_employees: item.is_visible_to_employees,

@@ -47,11 +47,14 @@ class KnowledgeBasePresenter
         $roots = KnowledgeCategory::query()
             ->whereNull('parent_id')
             ->with([
+                'creator',
+                'updater',
                 'children' => fn ($query) => $query
-                    ->with(['children', 'articles'])
+                    ->with(['children', 'articles', 'creator', 'updater'])
                     ->orderBy('sort_order')
                     ->orderBy('name'),
                 'articles' => fn ($query) => $query
+                    ->with(['creator', 'updater'])
                     ->orderBy('sort_order')
                     ->orderBy('title'),
             ])
@@ -75,12 +78,14 @@ class KnowledgeBasePresenter
 
         $category->load([
             'parent',
+            'creator',
+            'updater',
             'children' => fn ($query) => $query
-                ->with(['children', 'articles'])
+                ->with(['children', 'articles', 'creator', 'updater'])
                 ->orderBy('sort_order')
                 ->orderBy('name'),
             'articles' => fn ($query) => $query
-                ->with('category')
+                ->with(['category', 'creator', 'updater'])
                 ->orderBy('sort_order')
                 ->orderBy('title'),
         ]);
@@ -104,6 +109,10 @@ class KnowledgeBasePresenter
                 'cover_url' => $category->cover_url,
                 'is_visible_to_employees' => (bool) $category->is_visible_to_employees,
                 'materials_count' => $visibleChildren->count() + $visibleArticles->count(),
+                'author_name' => $category->creator?->name,
+                'updated_by_name' => $category->updater?->name,
+                'created_at' => $this->formatDateTime($category->created_at),
+                'updated_at' => $this->formatDateTime($category->updated_at),
                 'subcategories' => $visibleChildren->map(
                     fn (KnowledgeCategory $child) => $this->mapCategoryCard($child, $user),
                 )->values(),
@@ -125,7 +134,11 @@ class KnowledgeBasePresenter
 
     public function buildArticle(User $user, KnowledgeArticle $article): array
     {
-        $article->loadMissing('category.parent');
+        $article->loadMissing([
+            'category.parent',
+            'creator',
+            'updater',
+        ]);
 
         abort_unless($this->canViewArticle($user, $article), 404);
 
@@ -145,6 +158,9 @@ class KnowledgeBasePresenter
                 'scheduled_publish_at' => $article->scheduled_publish_at?->format('Y-m-d\TH:i'),
                 'tags' => array_values($article->tags ?? []),
                 'access_level' => $article->access_level ?: KnowledgeArticle::ACCESS_INHERIT,
+                'author_name' => $article->creator?->name,
+                'updated_by_name' => $article->updater?->name,
+                'created_at' => $this->formatDateTime($article->created_at),
                 'updated_at' => $article->updated_at?->format('d.m.Y H:i'),
                 'href' => $this->articleHref($user, $article),
                 'category' => [
@@ -178,6 +194,10 @@ class KnowledgeBasePresenter
             'clear_icon_image' => false,
             'cover_url' => '',
             'cover' => null,
+            'cover_position_x' => 50,
+            'cover_position_y' => 50,
+            'cover_zoom_percent' => 100,
+            'cover_height_px' => 220,
             'clear_cover' => false,
             'parent_id' => $parent?->id,
             'is_visible_to_employees' => true,
@@ -195,6 +215,10 @@ class KnowledgeBasePresenter
             'clear_icon_image' => false,
             'cover_url' => $category->cover_url ?: '',
             'cover' => null,
+            'cover_position_x' => 50,
+            'cover_position_y' => 50,
+            'cover_zoom_percent' => 100,
+            'cover_height_px' => 220,
             'clear_cover' => false,
             'parent_id' => $category->parent_id,
             'is_visible_to_employees' => $category->is_visible_to_employees,
@@ -216,6 +240,10 @@ class KnowledgeBasePresenter
             'blocks' => json_encode([KnowledgeArticleBlocks::makeBlock('p')], JSON_UNESCAPED_UNICODE),
             'cover' => null,
             'cover_url' => '',
+            'cover_position_x' => 50,
+            'cover_position_y' => 50,
+            'cover_zoom_percent' => 100,
+            'cover_height_px' => 220,
             'clear_cover' => false,
             'is_published' => false,
             'scheduled_publish_at' => null,
@@ -242,6 +270,10 @@ class KnowledgeBasePresenter
             ),
             'cover' => null,
             'cover_url' => $article->cover_url ?: '',
+            'cover_position_x' => 50,
+            'cover_position_y' => 50,
+            'cover_zoom_percent' => 100,
+            'cover_height_px' => 220,
             'clear_cover' => false,
             'is_published' => $article->is_published,
             'scheduled_publish_at' => $article->scheduled_publish_at?->format('Y-m-d\TH:i'),
@@ -326,6 +358,10 @@ class KnowledgeBasePresenter
             'href' => $this->categoryHref($user, $category),
             'subcategories_count' => $visibleChildren->count(),
             'articles_count' => $visibleArticles->count(),
+            'author_name' => $category->creator?->name,
+            'updated_by_name' => $category->updater?->name,
+            'created_at' => $this->formatDateTime($category->created_at),
+            'updated_at' => $this->formatDateTime($category->updated_at),
             'preview_subcategories' => $visibleChildren
                 ->take(3)
                 ->map(fn (KnowledgeCategory $child) => [
@@ -359,6 +395,10 @@ class KnowledgeBasePresenter
             'can_delete' => $user->can('delete', $category),
             'href' => $this->categoryHref($user, $category),
             'materials_count' => $visibleChildrenCount + $visibleArticlesCount,
+            'author_name' => $category->creator?->name,
+            'updated_by_name' => $category->updater?->name,
+            'created_at' => $this->formatDateTime($category->created_at),
+            'updated_at' => $this->formatDateTime($category->updated_at),
         ];
     }
 
@@ -378,7 +418,16 @@ class KnowledgeBasePresenter
             'can_update' => $user->can('update', $article),
             'can_delete' => $user->can('delete', $article),
             'can_duplicate' => $user->can('duplicate', $article),
+            'author_name' => $article->creator?->name,
+            'updated_by_name' => $article->updater?->name,
+            'created_at' => $this->formatDateTime($article->created_at),
+            'updated_at' => $this->formatDateTime($article->updated_at),
         ];
+    }
+
+    private function formatDateTime($value): ?string
+    {
+        return $value?->format('d.m.Y H:i');
     }
 
     private function moveCategoryOptions(User $user, KnowledgeCategory $currentCategory): array

@@ -30,8 +30,6 @@ class KnowledgeCategoryPolicy
 
     public function delete(User $user, KnowledgeCategory $category): bool
     {
-        return $user->isAdmin()
-            && ! $category->children()->exists()
-            && ! $category->articles()->exists();
+        return $user->isAdmin();
     }
 }
